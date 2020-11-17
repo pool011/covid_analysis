@@ -1,0 +1,324 @@
+---
+title: "R Notebook"
+output:
+  word_document: default
+  html_notebook: default
+---
+```{r setup, include=FALSE}
+library(tidyverse)
+library(magrittr)
+library(ggplot2)
+library(ggpubr)
+library(flextable)
+library(lubridate)
+library(DescTools)
+library(effsize)
+library(pwr)
+library(sjPlot)
+library(webshot)
+library(scales)
+
+library(maps)
+library(plotly)
+library(kableExtra)
+library(knitr)
+```
+
+```{r}
+yd <- today()  - ddays(1)
+td <- today()
+
+td
+day <- yd
+
+exclude = c("")
+# date for daily data release
+a <- as.character(ymd(day))
+b <- str_split(a, "-")
+c1 <- as.character(b[[1]][2])
+c2 <- as.character(b[[1]][3]) 
+c3 <- as.character(b[[1]][1])
+d_lookup_str <- str_c(c1, c2, c3, sep = "-")
+
+sinceMarch16 <- seq(date("2020-03-16"), day, by=1)
+#sinceMarch16
+last30 <- seq(td-30, td, by=1)
+last21 <- seq(td-21, td, by=1)
+last14 <- seq(td-14, td, by=1)
+last7 <- seq(td-7, td, by=1)
+
+bold.14.text <- element_text(face = "bold", size = 12)
+
+red.fill.5 <- c("#bf080e","#bf080e","#bf080e","#bf080e","#bf080e")
+blue.fill.5 <- c("#0016bd","#0016bd","#0016bd","#0016bd","#0016bd")
+
+red.fill.10 <- c("#bf080e","#bf080e","#bf080e","#bf080e","#bf080e","#bf080e","#bf080e","#bf080e","#bf080e","#bf080e", "#bf080e")
+blue.fill.10 <- c("#0016bd","#0016bd","#0016bd","#0016bd","#0016bd","#0016bd","#0016bd","#0016bd","#0016bd","#0016bd", "#0016bd")
+
+x.limit.march15 <- seq(ymd("2020-03-15"), day, by=1)
+
+#annotation.moving.average <- annotate(geom = "text", x = xrange[1], y = yrange[2], label = paste(strwrap("Note: 5 Day Moving Average", 40), collapse = "\n"), hjust = 0, vjust = 1, size = 4)
+
+pq <- theme(text = bold.14.text) +
+  #theme(axis.ticks = element_blank()) +
+  theme(panel.border = element_rect(colour = "black", fill=NA, size=2),
+        panel.background=element_rect(colour = NA, fill = "white"))
+jhu_caption <- labs(caption="Data Source: Johns Hopkins University CSSE")
+```
+List of Countries by Continent
+```{r}
+EU_countries <- c("Albania", "Andora", "Armenia", "Austria", "Azerbaijan", "Belarus", "Belgium", "Bosnia and Herzegovina", "Bulgaria", "Croatia", "Cyprus", "Czechia", "Denmark",
+"Estonia",
+"Finland",
+"France",
+"Georgia",
+"Germany",
+"Greece",
+"Hungary",
+"Iceland",
+"Ireland",
+"Italy",
+"Kazakhstan",
+"Kyrgyzstan",
+"Latvia",
+"Lithuania",
+"Luxembourg",
+"Malta",
+"Monaco",
+"Montenegro",
+"Netherlands",
+"North Macedonia",
+"Norway",
+"Poland",
+"Portugal",
+"Moldova",
+"Romania",
+"Russia",
+"San Marino",
+"Serbia",
+"Slovakia",
+"Slovenia",
+"Spain",
+"Sweden",
+"Switzerland",
+"Tajikistan",
+"Turkey",
+"Turkmenistan",
+"Ukraine",
+"United Kingdom",
+"Uzbekistan")
+NA_countries <- c("Canada", "Mexico", "US")
+
+
+
+```
+
+Functions
+```{r}
+ma <- function(arr, n=5){
+  res = arr
+  for(i in n:length(arr)){
+    res[i] = mean(arr[(i-n+1):i])
+  }
+  res
+}
+
+movingAverage <- function(x, n=7, centered=FALSE) {
+    
+    if (centered) {
+        before <- floor  ((n-1)/2)
+        after  <- ceiling((n-1)/2)
+    } else {
+        before <- n-1
+        after  <- 0
+    }
+
+    # Track the sum and count of number of non-NA items
+    s     <- rep(0, length(x))
+    count <- rep(0, length(x))
+    
+    # Add the centered data 
+    new <- x
+    # Add to count list wherever there isn't a 
+    count <- count + !is.na(new)
+    # Now replace NA_s with 0_s and add to total
+    new[is.na(new)] <- 0
+    s <- s + new
+    
+    # Add the data from before
+    i <- 1
+    while (i <= before) {
+        # This is the vector with offset values to add
+        new   <- c(rep(NA, i), x[1:(length(x)-i)])
+
+        count <- count + !is.na(new)
+        new[is.na(new)] <- 0
+        s <- s + new
+        
+        i <- i+1
+    }
+
+    # Add the data from after
+    i <- 1
+    while (i <= after) {
+        # This is the vector with offset values to add
+        new   <- c(x[(i+1):length(x)], rep(NA, i))
+       
+        count <- count + !is.na(new)
+        new[is.na(new)] <- 0
+        s <- s + new
+        
+        i <- i+1
+    }
+    
+    # return sum divided by count
+    s/count
+}
+
+bar_chart_ts <- function(df, y, custom.fill = blue.fill.10, lab.title, y.lim = max(y)) {
+  plot <- ggplot(df, aes(x = date, y = y, fill = "")) + 
+    geom_col() +
+    scale_fill_manual(values = custom.fill) +
+    labs(y = "", title = lab.title, x = "Date") +
+    theme(legend.position = "none") +
+    ylim(0,y.lim) +
+    pq
+  plot
+}
+
+line_chart_ts <- function(df, y, custom.fill = blue.fill.10, lab.title, y.lim = max(y)) {
+  plot <- ggplot(df, aes(x = date, y = y, color = "", fill = "")) + 
+    geom_line(size = 1.2) +
+    scale_fill_manual(values = custom.fill) +
+    scale_color_manual(values = custom.fill)+
+    labs(y = "", title = lab.title, x = "Date") +
+    theme(legend.position = "none") +
+    ylim(0,y.lim) +
+    pq
+  plot
+}
+
+line_chart_ma_ts <- function(df, y, custom.fill = blue.fill.10, lab.title, y.lim = max(y)) {
+  plot <- ggplot(df, aes(x = date, y = y, color = "", fill = "")) + 
+    geom_smooth(size = 1.2) +
+    scale_fill_manual(values = custom.fill) +
+    scale_color_manual(values = custom.fill)+
+    labs(y = "", title = lab.title, x = "Date") +
+    theme(legend.position = "none") +
+    ylim(0,y.lim) +
+    pq
+  plot
+}
+
+```
+
+Read Raw Data
+```{r}
+csse_confirmed_global_ts <- read_csv("./csse/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv")
+csse_deaths_global_ts <- read_csv("./csse/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv")
+uid <- read_csv("./csse/csse_covid_19_data/UID_ISO_FIPS_LookUp_Table.csv")
+
+```
+
+Process Cases
+```{r}
+cases_stretched <- csse_confirmed_global_ts %>%
+  rename(state=`Province/State`, country=`Country/Region`) %>% 
+  mutate(state = factor(state), country = factor(country))
+
+cases_pivot <- cases_stretched %>% pivot_longer(`1/22/20`:last_col(), names_to = "date", values_to = "confirmed") %>% select(-state) %>% mutate(date = mdy(date)) %>% group_by(country,date) %>% summarise(confirmed = sum(confirmed)) %>% ungroup() %>% arrange(country, date)
+cases_pivot
+```
+
+Process Deaths
+```{r}
+deaths_stretched <- csse_deaths_global_ts %>% 
+  rename(state=`Province/State`, country=`Country/Region`) %>% 
+  mutate(state = factor(state), country = factor(country)) 
+
+deaths_pivot <- deaths_stretched %>% pivot_longer(`1/22/20`:last_col(), names_to = "date", values_to = "deaths") %>% select(-state) %>% mutate(date = mdy(date)) %>% group_by(country, date) %>% summarise(deaths = sum(deaths)) %>% ungroup() %>% arrange(country, date)
+deaths_pivot
+```
+
+Combine Deaths and Cases
+```{r}
+global <- inner_join(cases_pivot, deaths_pivot, key = "country") %>% mutate(mortality_rate = 100 * deaths / confirmed)
+global
+```
+Combine with UID info
+```{r}
+global_comb <- uid %>%
+  rename(population = Population, combined_key = Combined_Key, state=Province_State, country=Country_Region) %>% 
+  mutate(state = factor(state), country = factor(country)) %>%
+  filter(is.na(state)) %>%
+  filter(country %in% c(NA_countries, EU_countries)) %>% 
+  select(UID, -state, country, population) %>% 
+  inner_join(global, key = "country")# Join with global stats
+tail(unique(global_comb$country))
+
+global_comb_deltas <- global_comb %>% 
+  group_by(country) %>% 
+  arrange(date) %>% 
+  mutate(confirmed_delta = confirmed - lag(confirmed), deaths_delta = deaths - lag(deaths)) %>% 
+  mutate(confirmed_delta = case_when(
+    is.na(confirmed_delta) ~ as.double(confirmed),
+    TRUE ~ as.double(confirmed) - as.double(lag(confirmed))
+  ), deaths_delta = case_when(
+    is.na(deaths_delta) ~ as.double(deaths),
+    TRUE ~ as.double(deaths) - as.double(lag(deaths)))) %>% 
+  ungroup() %>% 
+  arrange(country, date) %>% 
+  select(-confirmed, -deaths)
+global_comb_deltas
+```
+Top 5 Country
+```{r}
+top_cases <- global_comb %>% filter(date == max(date)) %>% top_n(7,confirmed) %>% pull(var=country)
+top_deaths <- global_comb %>% filter(date == max(date)) %>% top_n(7, deaths) %>% pull(var=country)
+top_mortality <- global_comb %>% filter(date == max(date)) %>% top_n(7, mortality_rate) %>% pull(var=country)
+head(top_cases, 10)
+head(top_deaths, 10)
+head(top_mortality)
+
+```
+Top 5 Country (Deltas)
+```{r}
+top_new_cases <- global_comb_deltas %>% filter(date == max(date)) %>% top_n(10, confirmed_delta) %>% pull(var=country)
+top_new_deaths <- global_comb_deltas %>% filter(date == max(date)) %>% top_n(10, deaths_delta) %>% pull(var=country)
+head(top_new_cases)
+head(top_new_deaths)
+```
+
+
+
+```{r}
+p1_data <- global_comb %>%
+  filter(country %in% top_cases, date > td-60) %>% 
+  select(country, date, confirmed, deaths, population, mortality_rate) %>% 
+  group_by(country) %>% 
+  mutate(case_rate = 1e5*confirmed/population, death_rate = 1e5*deaths/population) %>% 
+  ungroup() 
+p1_data
+
+p1 <- p1_data %>% ggline(x = "date",
+                         y = "death_rate",
+                         group = "country",
+                         color = "country",
+                         #fill = "country",
+                         font.xtickslab = c(8,"bold", "black"),
+                         x.text.angle = 60,
+                         lab.size = 3,
+                         plot_type="l",
+                         size = 1.5,
+                         #label = TRUE,
+                         show.line.label = TRUE,
+                         repel=TRUE,
+                         legend = "none",
+                         lab.nb.digits = 0,
+                         #sort.by.groups = FALSE,
+                         #sort.val = "desc"
+                         #ylim=c(1,3000),
+                         yscale="none"
+                         )
+p1
+```

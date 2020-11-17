@@ -1,0 +1,455 @@
+---
+title: "R Notebook"
+output:
+  word_document: default
+  html_notebook: default
+---
+```{r setup, include=FALSE}
+library(tidyverse)
+library(magrittr)
+library(ggplot2)
+library(ggpubr)
+library(flextable)
+library(lubridate)
+library(DescTools)
+library(effsize)
+library(pwr)
+library(lmerTest)
+library(sjPlot)
+library(webshot)
+library(scales)
+library(shiny)
+library(maps)
+library(plotly)
+library(kableExtra)
+library(knitr)
+library(fpp2)
+
+library(treemap)
+```
+
+Constants
+```{r}
+yd <- today()  - ddays(1)
+td <- today()
+
+td
+day <- yd
+MichiganRiots<- seq(ymd("2020-05-26"), ymd("2020-06-03"), by = 1)
+exclude = c("")
+# date for daily data release
+a <- as.character(ymd(day))
+b <- str_split(a, "-")
+b1 <- as.character(b[[1]][2])
+b2 <- as.character(b[[1]][3]) 
+b3 <- as.character(b[[1]][1])
+d_lookup_str <- str_c(b1, b2, b3, sep = "-")
+sinceMarch16 <- seq(date("2020-03-16"), day, by=1)
+#sinceMarch16
+last30 <- seq(td-30, td, by=1)
+last21 <- seq(td-21, td, by=1)
+last14 <- seq(td-14, td, by=1)
+last7 <- seq(td-7, td, by=1)
+
+red_states <- c("Alabama", "Alaska", "Arizona", "Arkansas", "Florida", "Georgia", "Idaho", "Indiana", "Iowa", "Maryland", "Massachusetts", "Mississippi", "Missouri", "Nebraska", "New Hampshire", "North Dakota", "Ohio", "Oklahoma", "South Carolina", "South Dakota", "Tennessee", "Texas", "Utah", "Vermont", "West Virginia", "Wyoming")
+
+blue_states <- c("California", "Colorado", "Connecticut", "Delaware", "Hawaii", "Illinois", "Kansas", "Kentucky", "Louisiana", "Maine", "Michigan", "Minnesota", "Montana", "Nevada", "New Jersey", "New Mexico", "New York", "North Carolina", "Oregon", "Pennsylvania", "Rhode Island", "Virginia", "Washington", "Wisconsin")
+
+
+bold.14.text <- element_text(face = "bold", size = 12)
+
+red.fill.5 <- c("#bf080e","#bf080e","#bf080e","#bf080e","#bf080e")
+blue.fill.5 <- c("#0016bd","#0016bd","#0016bd","#0016bd","#0016bd")
+
+red.fill.10 <- c("#bf080e","#bf080e","#bf080e","#bf080e","#bf080e","#bf080e","#bf080e","#bf080e","#bf080e","#bf080e", "#bf080e")
+blue.fill.10 <- c("#0016bd","#0016bd","#0016bd","#0016bd","#0016bd","#0016bd","#0016bd","#0016bd","#0016bd","#0016bd", "#0016bd")
+
+x.limit.march15 <- seq(ymd("2020-03-15"), day, by=1)
+
+#annotation.moving.average <- annotate(geom = "text", x = xrange[1], y = yrange[2], label = paste(strwrap("Note: 5 Day Moving Average", 40), collapse = "\n"), hjust = 0, vjust = 1, size = 4)
+
+pq <- theme(text = bold.14.text) +
+  #theme(axis.ticks = element_blank()) +
+  theme(panel.border = element_rect(colour = "black", fill=NA, size=2),
+        panel.background=element_rect(colour = NA, fill = "white"))
+jhu_caption <- labs(caption="Data Source: Johns Hopkins University CSSE")
+```
+
+Functions
+```{r}
+movingAverage <- function(x, n=14, centered=TRUE) {
+    
+    if (centered) {
+        before <- floor  ((n-1)/2)
+        after  <- ceiling((n-1)/2)
+    } else {
+        before <- n-1
+        after  <- 0
+    }
+
+    # Track the sum and count of number of non-NA items
+    s     <- rep(0, length(x))
+    count <- rep(0, length(x))
+    
+    # Add the centered data 
+    new <- x
+    # Add to count list wherever there isn't a 
+    count <- count + !is.na(new)
+    # Now replace NA_s with 0_s and add to total
+    new[is.na(new)] <- 0
+    s <- s + new
+    
+    # Add the data from before
+    i <- 1
+    while (i <= before) {
+        # This is the vector with offset values to add
+        new   <- c(rep(NA, i), x[1:(length(x)-i)])
+
+        count <- count + !is.na(new)
+        new[is.na(new)] <- 0
+        s <- s + new
+        
+        i <- i+1
+    }
+
+    # Add the data from after
+    i <- 1
+    while (i <= after) {
+        # This is the vector with offset values to add
+        new   <- c(x[(i+1):length(x)], rep(NA, i))
+       
+        count <- count + !is.na(new)
+        new[is.na(new)] <- 0
+        s <- s + new
+        
+        i <- i+1
+    }
+    
+    # return sum divided by count
+    s/count
+}
+
+bar_chart_ts <- function(df, y, custom.fill = blue.fill.10, lab.title, y.lim = max(y)) {
+  plot <- ggplot(df, aes(x = date, y = y, fill = "")) + 
+    geom_col() +
+    scale_fill_manual(values = custom.fill) +
+    labs(y = "", title = lab.title, x = "Date") +
+    theme(legend.position = "none") +
+    ylim(0,y.lim) +
+    pq
+  plot
+}
+
+line_chart_ts <- function(df, y, custom.fill = blue.fill.10, lab.title, y.lim = max(y)) {
+  plot <- ggplot(df, aes(x = date, y = y, color = "", fill = "")) + 
+    geom_line(size = 1.2) +
+    scale_fill_manual(values = custom.fill) +
+    scale_color_manual(values = custom.fill)+
+    labs(y = "", title = lab.title, x = "Date") +
+    theme(legend.position = "none") +
+    ylim(0,y.lim) +
+    pq
+  plot
+}
+
+line_chart_ma_ts <- function(df, y, custom.fill = blue.fill.10, lab.title, y.lim = max(y)) {
+  plot <- ggplot(df, aes(x = date, y = y, color = "", fill = "")) + 
+    geom_smooth(size = 1.2) +
+    scale_fill_manual(values = custom.fill) +
+    scale_color_manual(values = custom.fill)+
+    labs(y = "", title = lab.title, x = "Date") +
+    theme(legend.position = "none") +
+    ylim(0,y.lim) +
+    pq
+  plot
+}
+
+```
+
+Load Johns Hopkins Univ. CSSE Data
+```{r}
+daily_fname <- str_c("./csse/csse_covid_19_data/csse_covid_19_daily_reports_us/", d_lookup_str, ".csv")
+csse_today <- read_csv(daily_fname, col_types = "ccTddddddddddddcdd")
+#spec(csse_today)
+csse_confirmed_us_ts <- read_csv("./csse/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv")
+csse_deaths_us_ts <- read_csv("./csse/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_US.csv")
+uid <- read_csv("./csse/csse_covid_19_data/UID_ISO_FIPS_LookUp_Table.csv", col_types = "iccddcccddci")
+daily_updates_ts <- read_csv("daily_updates_ts_us.csv")
+```
+```{r}
+#%>% mutate(GeoName = fct_reorder(gdp_state$GeoName, gdp_state$GeoFIPS)) 
+
+gdp_county <- read_csv("./CAGDP1__ALL_AREAS_2001_2018.csv")
+gdp_state <- read_csv("./SAGDP1__ALL_AREAS_1997_2019.csv", skip=0,n_max=480)
+state_names <- unique(gdp_state$GeoName)
+state_names
+good_states <- gdp_state %>% filter(GeoName %in% c(red_states, blue_states, "District of Columbia")) %>% pull(GeoName)
+unique(good_states)
+unique(gdp_state$Description)
+#c(red_states,blue_states, "New England", "Mideast", "Great Lakes", "Plains", "Southeast", "Southwest", "Rocky Mountain", "Far West")
+
+head(gdp_state,12)
+
+gdp_state_fac <- gdp_state %>% 
+  arrange(GeoName, LineCode) %>% 
+  filter(GeoName %in% sort(c(red_states, blue_states, "District of Columbia"))) %>% 
+  mutate(state = factor(GeoName, labels=sort(c(red_states, blue_states, "District of Columbia")))) %>% 
+  select(-GeoName) %>% 
+  group_by(state) %>% 
+  mutate(stat_type = factor(LineCode, labels = c("rgdp_2012","chain","ngdp", "compensation", "g_oper_surplus", "topi_net", "topi", "subsidies"))) %>%
+  ungroup() %>% 
+  select(state, stat_type, Unit, `2019`) %>%  
+  group_by(state) %>% 
+  filter(stat_type %in% levels(stat_type)[c(1,3)]) %>% 
+  ungroup()
+head(gdp_state_fac)
+
+gdp_state_spread <- gdp_state_fac %>% 
+  arrange(state) %>% 
+  filter(stat_type==levels(stat_type)[3]) %>% 
+  group_by(state) %>% 
+  pivot_wider(names_from = stat_type, values_from=`2019`) %>% 
+  ungroup() %>% 
+  select(state, ngdp, Unit)
+
+gdp_state_spread
+```
+16, 316, 630, 580, 850
+Filter US ID Values
+```{r}
+
+us_uid <- uid %>% 
+  filter(code3 %in% c(16, 316, 580, 850, 630, 840)) %>%
+  select(UID, Admin2, Province_State, Combined_Key, Population) %>% 
+  arrange(UID)
+us_uid
+states <- c(us_uid$Province_State[1:4], us_uid$Province_State[6:57])
+states_uid <-seq(84000001, 84000056, by = 1)
+uid_states <- us_uid %>% 
+  filter(UID %in% c(seq(84000001, 84000056, by = 1))) %>% 
+  filter(UID != 84000011)
+uid_states
+nyc_uid <- uid$UID[uid$Combined_Key == "New York City, New York, US"]
+nyc_pop <- uid$Population[uid$Combined_Key == "New York City, New York, US"]
+```
+```{r}
+pop_analysis <- uid_states %>% 
+  summarize(uid = 840, Province_State = "All", Combined_Key = "All, US", Population = sum(Population))
+us_pop <- pop_analysis$Population[1]
+uid_states_analysis <- uid_states %>% 
+  mutate(Population_Proportion = (Population / us_pop))
+uid_states_analysis %<>% arrange(uid_states_analysis, desc(Population_Proportion))
+
+pop.model <- lm(Population ~ seq(1,50), data = uid_states_analysis)
+summary(pop.model)
+p_pop <- treemap(uid_states_analysis,
+                 index = "Province_State",
+                 vSize = "Population",
+                 type = "index")
+p_pop
+```
+By State Snapshot Today
+```{r}
+
+csse_today_states <- csse_today %>% 
+  select(-Lat, -Long_, -FIPS, -Last_Update) %>%
+  inner_join(uid_states, key = "UID") %>% 
+  filter(Province_State %in% us_uid$Province_State & !(is.na(Province_State)), !(Province_State %in% c("Diamond Princess", "Recovered", "Grand Princess"))) %>%
+  rename(state = Province_State) %>% 
+  rename(confirmed = Confirmed, deaths = Deaths, recovered = Recovered, active = Active, tested = Total_Test_Results, hospitalized = People_Hospitalized) %>% 
+  arrange(desc(Testing_Rate))
+daily_updates_ts %<>% 
+  select(-Lat, -Long_, -FIPS, -Last_Update) %>%
+  inner_join(uid_states, key = "UID") %>% 
+  #filter(Province_State %in% us_uid$Province_State & !(is.na(Province_State)), !(Province_State %in% c("Diamond Princess", "Recovered", "Grand Princess"))) %>%
+  rename(state = Province_State) %>% 
+  rename(date = Date, confirmed = Confirmed, deaths = Deaths, recovered = Recovered, active = Active, tested = Total_Test_Results, hospitalized = People_Hospitalized) %>% 
+  filter(!(is.na(Testing_Rate))) %>% 
+  arrange(date)
+
+```
+
+
+Testing and Incident Rate
+```{r}
+csse_today_states %<>% 
+  mutate(c_d_rat = deaths / confirmed) %>% 
+  filter(!(is.na(c_d_rat))) %>% 
+  filter(c_d_rat != Inf)
+
+# shift data to days since 50th case and 10th recorded death
+
+#tvi_plot <- daily_updates_ts %>% 
+#  ggplot(aes(x = Testing_Rate, y = Hospitalization_Rate)) + 
+#  geom_point(aes(group = state))+
+#  geom_smooth(aes(group = state), method = 'lm')+
+#  labs(y = "Hosp", title = strwrap("Effect of Testing Rate on Incident Rate of COVID-19"), subtitle = #"Within the USA and its territories", x = "Tested Individuals per 100,000 People", caption="Data Source: #Johns Hopkins University CSSE 2020-04-29.\n Each point represents one state/territory.") +
+#  theme(legend.position = "right") +
+#  scale_y_continuous()+
+#  pq
+#ggsave("testing-data-plot.png", plot=tvi_plot)
+```
+
+```{r}
+#"1M", "2M", "3M", "4M", "5M", "6M", "7M", "8M", "9M", "10M", "11M", "12M"
+md_testing_rate <- csse_today_states$Testing_Rate[csse_today_states$state == "Maryland"]
+md_testing_rate
+mean_testing_rate <- mean(csse_today_states$Testing_Rate)
+mean_testing_rate
+
+csse_today_states_sorted <- csse_today_states %>% mutate(vote = case_when(
+  state %in% blue_states ~ "Dem",
+  state %in% red_states ~ "Rep"
+)) %>% 
+  mutate(vote = factor(vote)) %>% mutate(vote = fct_relevel(vote, c("Rep", "Dem")))
+head(daily_updates_ts)
+
+in_millions <- function(x) (x / 1000000)
+states_sorted_in_millions <- csse_today_states_sorted %>% mutate_at(vars(matches("Population")), in_millions) %>% pull(Population) %>% summary()
+N <- 20
+pop_breaks <- c(-Inf, 500000, seq(10^6,N*10^6, by = 2*10^6), Inf)
+pop_break_levels <- c("<500K", "500K", paste(seq(2,N-2,by=2), rep("M",times = round(((N/2)-1), 1), sep="")), paste(c(">", as.character(N), "M"),collapse=""))
+pop_break_levels
+
+csse_today_states_sorted %<>% mutate(Pop_fac = cut(csse_today_states_sorted$Population, breaks = pop_breaks, labels = pop_break_levels))
+csse_today_states_sorted %<>% filter(Testing_Rate < 75000)# %>% filter(Mortality_Rate < 6)
+
+daily_updates_ts %<>% mutate(Pop_fac = cut(daily_updates_ts$Population, breaks = pop_breaks, labels = pop_break_levels))
+daily_updates_ts %<>% filter(Testing_Rate < 75000)
+
+mean_testing_rates <- csse_today_states_sorted %>% 
+  group_by(vote) %>% 
+  summarize(sum = sum(Population), avg = mean(Population), median = median(Population))
+mean_testing_rates
+
+daily_updates_ts_sorted <- daily_updates_ts %>% mutate(vote = case_when(
+  state %in% blue_states ~ "Dem",
+  state %in% red_states ~ "Rep"
+)) %>% 
+  mutate(vote = factor(vote)) %>% mutate(vote = fct_relevel(vote, c("Rep", "Dem")))
+daily_updates_ts_sorted
+
+daily_updates_ts_sum <- daily_updates_ts_sorted %>%  
+  group_by(state,vote) %>% 
+  summarise(mean_testing_rate = mean(Testing_Rate), med_testing_rate = median(Testing_Rate))
+#model.2 <- lm(confirmed ~ c_d_rat, data = csse_today_states_sorted)
+#summary(model.2)
+```
+
+```{r}
+summary(csse_today_states_sorted$Pop_fac)
+ggplot(csse_today_states_sorted, aes(x = Pop_fac))+geom_histogram(stat="count", position="dodge",aes(fill = vote))+geom_smooth(stat="count", aes(color = vote), group="vote", size = 1.5)+labs(x="Population")+ facet_wrap(~vote)#, color = vote)#+ylim(0,8)
+csse_today_states_sorted$state
+```
+
+Violin Plots
+```{r}
+testing_density <- csse_today_states_sorted %>%
+  ggplot()+
+  #geom_density(data=data.frame(a=seq(1,500000, by=1),b=rnorm(500000, mean=40000, sd=12000)), aes(x=b, fill="Normal"), alpha=0.6)+
+  geom_density(aes(x=Testing_Rate, fill = vote), alpha = 0.7)+
+  labs(y = "Density", x = "Testing Rate", title = "Testing Rate Density")+
+  theme(legend.position = "none")+
+  pq+
+  jhu_caption+
+  theme_538()
+testing_density
+
+summary(csse_today_states_sorted$Testing_Rate)
+```
+Mean Plots
+```{r}
+ggline(csse_today_states_sorted, x = "vote", y="Testing_Rate",
+       #color="vote",
+       add = c("mean_se", "jitter"),
+       order=c("Rep", "Dem"),
+       ylab = "Testing Rate",
+       xlab = "Governor Party",
+       title = "Testing Rate (Per 100,000 Individuals)",
+       ggtheme = theme_538(),
+       facet.by="Pop_fac")
+#csse_today_states_sorted[state=="Maryland"]$Testing_Rate
+```
+
+```{r}
+ggline(csse_today_states_sorted, x = "vote", y="Incident_Rate",
+       #color="vote",
+       add = c("mean_se", "jitter"),
+       order=c("Rep", "Dem"),
+       ylab = "Case Rate",
+       xlab = "Governor Party",
+       title = "Case Rate (Per 100,000 Individuals)",
+       facet.by="Pop_fac")
+#csse_today_states_sorted[state=="Maryland"]$Testing_Rate
+```
+
+```{r}
+ggline(csse_today_states_sorted, x = "vote", y="Case_Fatality_Ratio",
+       #color="vote",
+       add = c("mean_se", "jitter"),
+       order=c("Rep", "Dem"),
+       ylab = "Mortality Rate (%)",
+       xlab = "Governor Party",
+       title = "Mortality Rate By Governor Party")
+```
+
+```{r}
+ggline(data=csse_today_states_sorted, x="vote", y="Testing_Rate", 
+       add= c("mean_se", "jitter"),
+       order=c("Rep", "Dem"),
+       ylab = "Testing Rate (per 100,000 individuals)",
+       xlab = "Governor Party", 
+       title="Testing Rate By Governor Party")
+       #cor.coef=TRUE, 
+       #x.text.angle=90)
+```
+Statistical Test
+```{r}
+vote_v_testing_data <- csse_today_states_sorted %>% 
+  group_by(vote) %>% 
+  summarize(n = n(), mean=mean(Testing_Rate), med = median(Testing_Rate), sd = sd(Testing_Rate))
+#summary(daily_updates_ts_sorted)
+#summary(daily_updates_ts_sorted)
+daily_updates_ts_sample <- daily_updates_ts_sorted %>% ungroup() %>% filter(state%in% c("Texas", "California"))
+#summary(daily_updates_ts_sample)
+ttest <- t.test(csse_today_states_sorted$Testing_Rate ~ csse_today_states_sorted$vote, alternative="less", paired = FALSE)
+ttest
+
+eff <- cohen.d(csse_today_states_sorted$Testing_Rate~csse_today_states_sorted$vote, paired = FALSE, alternative="less", hedges.correction=TRUE)
+eff
+pwr.2p.test(n=23, h=eff$estimate, power=NULL, sig.level=ttest$p.value, alternative = "less")#, type = "two.sample")
+#vote.aov <- aov(Testing_Rate ~ Pop_fac * vote, data = csse_today_states_sorted)
+#str(vote.aov)
+
+#head(daily_updates_ts_sorted)
+#TukeyHSD(vote.aov)
+#plot(vote.aov,c(1,2))
+```
+
+
+```{r}
+model.test_v_inc <- lm(Incident_Rate ~ Testing_Rate, data = csse_today_states_sorted)
+summary(model.test_v_inc)
+plot(predict.lm(model.test_v_inc))
+```
+
+```{r}
+ggscatter(data = csse_today_states_sorted, x="Testing_Rate", y="Incident_Rate", group="Vote",
+       add="reg.line",
+       cor.coef=TRUE,
+       fill="vote",
+       color = "vote", legend="none", x.text.angle = 90, sort.val="asc", lab.repel=TRUE, lab.nb.digits=1)
+
+```
+
+
+Testing_Rate v. RGDP 2019
+```{r eval=TRUE}
+today_states_gdp <- csse_today_states_sorted %>% 
+  inner_join(gdp_state_spread, by="state") %>% 
+  select(-c_d_rat)
+
+test_v_gdp <- lm(Testing_Rate ~ ngdp, data=today_states_gdp)
+plot(test_v_gdp, c(1,2))
+ggscatter(today_states_gdp, x="ngdp", y="Testing_Rate", add = "reg.line", cor.coef=TRUE)
+```
