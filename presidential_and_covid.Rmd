@@ -9,17 +9,17 @@ library(tidyverse)
 library(magrittr)
 library(ggpubr)
 library(lubridate)
-library(DescTools)
-library(effsize)
-library(pwr)
-library(lmerTest)
-library(sjPlot)
-library(webshot)
+#library(DescTools)
+#library(effsize)
+#library(pwr)
+#library(lmerTest)
+#library(sjPlot)
+#library(webshot)
 
-library(readxl)
-library(elections)
+#library(readxl)
+#library(elections)
 library(caret)
-library(earth)
+#library(earth)
 library(Formula)
 library(plotrix)
 library(plotmo)
@@ -44,15 +44,15 @@ Load Data
 ```{r}
 ts_date_count <- today() - ymd(20200122)
 
-confirmed_us_ts <- read_csv("./csse/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv", 
+confirmed_us_ts <- read_csv("../COVID-19/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv", 
                                  col_types=str_c('cccddcccddc', 
                                                  str_c(rep("i", times=ts_date_count), collapse=""))
                                  )
 
-uid <- read_csv("./csse/csse_covid_19_data/UID_ISO_FIPS_LookUp_Table.csv", col_types = "cccddcccddci")
+uid <- read_csv("../COVID-19/csse_covid_19_data/UID_ISO_FIPS_LookUp_Table.csv", col_types = "cccddcccddci")
 
-mask_use <- read_csv("./election_night2020/context/covid/raw/mask-use-by-county.csv", col_names = c("FIPS","NEVER","RARELY","SOMETIMES","FREQUENTLY","ALWAYS"), col_types = "dddddd", skip=1)
-election_results_raw <- read_csv("./election_night2020/results/leip_natl_data.csv")
+mask_use <- read_csv("../election_night2020/context/covid/raw/mask-use-by-county.csv", col_names = c("FIPS","NEVER","RARELY","SOMETIMES","FREQUENTLY","ALWAYS"), col_types = "dddddd", skip=1)
+election_results_raw <- read_csv("../election_night2020/results/leip_natl_data.csv")
 summary(election_results_raw)
 ```
 ```{r}
@@ -173,6 +173,7 @@ summary(training_data)
 
 
 ```
+
 ```{r}
 preProcess_missingdata_model <- preProcess(training_data, method = 'medianImpute')
 training_data <- predict(preProcess_missingdata_model, newdata=training_data)
@@ -256,6 +257,7 @@ set.seed(100)
 model_luna2 <- train(`Donald J. Trump` ~ ., data = training_data, method = 'lm', tuneLength = 5, trControl = fitControl)
 model_luna2
 ```
+
 ```{r}
 # Step 2: Predict on testData and Compute the confusion matrix
 predicted <- predict(model_luna2, test_data2)
@@ -272,7 +274,7 @@ plot(varimp_mars)
 ```{r}
 set.seed(100)
 
-cl <- makePSOCKcluster(4)
+cl <- makePSOCKcluster(2)
 registerDoParallel(cl)
 #registerDoSEQ()
 
@@ -287,7 +289,7 @@ confusionMatrix(reference = validation$`Donald J. Trump`, data = predicted2, mod
 ```
 
 ```{r}
-cl <- makePSOCKcluster(4)
+cl <- makePSOCKcluster(2)
 registerDoParallel(cl)
 set.seed(100)
 model_rf <- train(`Donald J. Trump` ~ ., data = training_data, method = 'rf', tuneLength = 5, trControl = fitControl)
@@ -310,7 +312,7 @@ gbmGrid <- expand.grid(interaction.depth = c(1,5,9),
                        shrinkage=0.1,
                        n.minobsinnode=20)
 
-cl <- makePSOCKcluster(4)
+cl <- makePSOCKcluster(2)
 registerDoParallel(cl)
 model_xgbDART <- train(`Donald J. Trump` ~ ., data = training_data, method = 'gbm', tuneGrid = gbmGrid, trControl = fitControl)#, metric="Accuracy")
 stopCluster(cl)
