@@ -1,0 +1,161 @@
+---
+title: "Vote by COVID"
+author: "Jonah Pool"
+date: "11/17/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(magrittr)
+library(ggpubr)
+library(lubridate)
+library(DescTools)
+library(effsize)
+library(pwr)
+library(lmerTest)
+library(sjPlot)
+library(webshot)
+
+library(readxl)
+
+```
+
+```{r}
+sinceMarch16 <- seq(date("2020-06-03"), today()-1, by=1)
+last30 <- seq(today()-30, today(), by=1)
+
+bold.14.text <- element_text(face = "bold", size = 12)
+
+pq <- theme(text = bold.14.text) +
+  #theme(axis.ticks = element_blank()) +
+  theme(panel.border = element_rect(colour = "black", fill=NA, size=2),
+        panel.background=element_rect(colour = NA, fill = "white"))
+jhu_caption <- labs(caption="Data Source: Johns Hopkins University CSSE")
+```
+
+Load Data
+```{r}
+ts_date_count <- today() - ymd(20200122)
+
+confirmed_us_ts <- read_csv("./csse/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv", 
+                                 col_types=str_c('cccddcccddc', 
+                                                 str_c(rep("i", times=ts_date_count), collapse=""))
+                                 )
+
+uid <- read_csv("./csse/csse_covid_19_data/UID_ISO_FIPS_LookUp_Table.csv", col_types = "cccddcccddci")
+
+mask_use <- read_csv("./election_night2020/context/covid/raw/mask-use-by-county.csv", col_names = c("FIPS","NEVER","RARELY","SOMETIMES","FREQUENTLY","ALWAYS"), col_types = "dddddd", skip=1)
+election_results_raw <- read_csv("./election_night2020/results/leip_natl_data.csv")
+summary(election_results_raw)
+```
+```{r}
+election_results_clean <- election_results_raw %>% 
+  pivot_longer(`Joseph R. Biden Jr.`:last_col(), names_to = "Candidate", values_to = "Votes")
+election_ratios <- election_results_clean %>%
+  mutate(Percent_Vote = case_when(
+    `Total Vote` == 0 ~ 0,
+    Votes == 0 ~ 0,
+    TRUE ~ 100*Votes/`Total Vote`
+    )) %>% 
+  filter(Candidate %in% c("Joseph R. Biden Jr.", "Donald J. Trump", "Dr. Jo Jorgensen")) %>% 
+  group_by(FIPS) %>% 
+  mutate(Winner = Candidate[Votes == max(Votes)]) %>% 
+  mutate(Winner = case_when(
+    (max(Votes) == 0) ~ "NA",
+    (max(Votes) > 0) ~ Winner
+    )) %>% 
+  ungroup() %>% 
+  filter(Winner != "NA") %>% 
+  select(FIPS, `Geographic Name`, `Geographic Subtype`, Winner, `Total Vote`, Candidate, Votes, Percent_Vote) %>% 
+  pivot_wider(id_cols=FIPS:`Total Vote`, names_from = "Candidate", values_from = "Percent_Vote") %>% 
+  #mutate(`Donald J. Trump` = cut(`Donald J. Trump`, breaks = c(-Inf, seq(5, 100, by = 5)), labels = c(paste(seq(5,100,by=5), rep("%"))))) %>% 
+  rename(Admin2 = `Geographic Name`)
+```
+
+```{r}
+clean_uid <- uid %>% 
+  select(-iso2, -code3, -Lat, -Long_) %>% 
+  arrange(UID)
+```
+
+
+```{r}
+#matches("`(1?[0-9]{1})/([0-2]?[0-9]{1}/20)`")
+
+cases_ts <- confirmed_us_ts %>%
+  filter(!(Province_State %in% c("Diamond Princess", "Recovered", "Grand Princess"))) %>%
+  select(-iso2, -code3, -Lat, -Long_) %>% 
+  #filter(State_Province = "Alabama") %>% 
+  arrange(UID) %>% 
+  # pivot data to make dates a new column
+  pivot_longer(`1/22/20`:last_col(), names_to = "date", values_to = "cases") %>%
+  # join with uid table to acquire the population
+  mutate(date=mdy(date)) %>% 
+  left_join(clean_uid, by=c("UID", "iso3", "FIPS","Admin2", "Province_State", "Country_Region", "Combined_Key")) %>% 
+  filter(Admin2 != 'Unassigned') %>% 
+  filter(!(str_starts(Admin2, "Out of"))) %>% 
+  arrange(Province_State, Admin2) %>% 
+  group_by(UID) %>% 
+  arrange(date) %>% 
+  filter(date %in% sinceMarch16) %>% 
+  mutate(cases = cases-min(cases)) %>% 
+  mutate(cases_per_100k = 10e4 * cases / Population, perc_change = 100*(cases_per_100k-lag(cases_per_100k,1))/ lag(cases_per_100k,1)) %>% 
+  ungroup()
+
+cases_ts$perc_change[is.infinite(cases_ts$perc_change)] <- 100
+
+cases_ts %<>% 
+  filter(cases > 5, perc_change > 2) %>%  
+  arrange(Province_State, Admin2, date)
+
+cases_ts
+#cases_ts$perc_change[is.na(cases_ts$perc_change)] <- 0
+
+
+cases_ts_sum <- cases_ts %>% 
+  group_by(FIPS) %>% 
+  #filter(perc_change>200) %>% 
+  summarise(max_case_rate = max(cases_per_100k), max_change = max(perc_change), avg = mean(perc_change)) %>%
+  ungroup() %>% 
+  left_join(clean_uid, by="FIPS") %>% 
+  select(FIPS, Combined_Key, max_case_rate, max_change, avg)
+  
+  
+```
+
+
+```{r, echo = FALSE}
+cases_votes <- cases_ts %>% 
+  filter(date == max(date)) %>% 
+  filter(Province_State != "Alaska") %>% 
+  inner_join(election_ratios, by = c("FIPS")) %>% 
+  select(-`Geographic Subtype`, -date) %>% 
+  inner_join(mask_use, by = "FIPS") %>% 
+  mutate(Winner = factor(Winner)) %>% 
+  mutate(score = (1.5*ALWAYS + FREQUENTLY) - (SOMETIMES + RARELY + 1.5*NEVER))
+cases_votes_sum <- cases_ts_sum %>% 
+  inner_join(election_ratios, by=c("FIPS")) %>% 
+  inner_join(clean_uid, by=c("FIPS","Admin2", "Combined_Key")) %>% 
+  inner_join(mask_use, by = "FIPS") %>% 
+  mutate(Winner = factor(Winner)) %>% 
+  mutate(score = (1.5*ALWAYS + FREQUENTLY) - (SOMETIMES + RARELY + 1.5*NEVER))
+  
+
+summary(cases_votes_sum)
+
+```
+
+
+```{r}
+summary(lm(cases_per_100k ~ score, data=cases_votes))
+
+ggscatter(cases_votes, y="cases_per_100k", x=c("score", "NEVER", "ALWAYS"), add="reg.line", cor.coef = T)
+ggscatter(cases_votes, y="Donald J. Trump", x=c("score", "NEVER", "ALWAYS"), add="reg.line", cor.coef = T)
+#ggscatter(cases_votes_sum[sample(1:nrow(cases_votes_sum),50, replace=FALSE),], x="NEVER", y="avg", color="Donald J. Trump", size="Donald J. Trump")
+```
+
+```{r}
+
+```
+
