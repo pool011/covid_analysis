@@ -285,14 +285,14 @@ model_adaboost
 
 ```{r}
 predicted2 <- predict(model_adaboost, test_data2)
-confusionMatrix(reference = validation$`Donald J. Trump`, data = predicted2, mode="everything", positive = "Trump")
+#confusionMatrix(reference = validation$`Donald J. Trump`, data = predicted2, mode="everything", positive = "Trump")
 ```
 
 ```{r}
 cl <- makePSOCKcluster(2)
 registerDoParallel(cl)
 set.seed(100)
-model_rf <- train(`Donald J. Trump` ~ ., data = training_data, method = 'rf', tuneLength = 5, trControl = fitControl)
+model_rf <- train(`Donald J. Trump` ~ ., data = training_data, method = 'rf', tuneLength = 4, trControl = fitControl)
 stopCluster(cl)
 model_rf
 ```
@@ -318,6 +318,7 @@ model_xgbDART <- train(`Donald J. Trump` ~ ., data = training_data, method = 'gb
 stopCluster(cl)
 model_xgbDART
 ```
+
 ```{r}
 trellis.par.set(caretTheme())
 plot(model_xgbDART)
