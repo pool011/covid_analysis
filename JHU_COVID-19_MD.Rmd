@@ -3,8 +3,8 @@ title: "JHU_COVID-19_MD"
 author: "Jonah Pool"
 date: "5/26/2020"
 output:
-  word_document: default
   html_document: default
+  word_document: default
   pdf_document: default
 ---
 ```{r setup, include=FALSE}
@@ -23,8 +23,6 @@ library(maps)
 library(plotly)
 library(kableExtra)
 library(knitr)
-
-library(wesanderson)
 ```
 
 Constants
@@ -33,7 +31,7 @@ yd <- today()  - ddays(1)
 td <- today()
 
 
-day <- yd-1
+day <- yd
 MichiganRiots<- seq(ymd("2020-05-26"), ymd("2020-06-1"), by = 1)
 exclude = c("")
 # date for daily data release
@@ -44,7 +42,7 @@ c2 <- as.character(b[[1]][3])
 c3 <- as.character(b[[1]][1])
 d_lookup_str <- str_c(c1, c2, c3, sep = "-")
 
-sinceMarch16 <- seq(date("2020-09-27"), day, by=1)
+sinceMarch16 <- seq(date("2020-03-16"), day, by=1)
 
 last30 <- seq(td-30, td, by=1)
 last21 <- seq(td-21, td, by=1)
@@ -172,15 +170,21 @@ line_chart_ma_ts <- function(df, y, custom.fill = blue.fill.10, lab.title, y.lim
 
 Load Johns Hopkins Univ. CSSE Data
 ```{r}
-daily_fname <- str_c("./csse/csse_covid_19_data/csse_covid_19_daily_reports_us/", d_lookup_str, ".csv")
+ts_date_count <- today() - ymd(20200122)
 
-csse_today <- read_csv(daily_fname)
-csse_confirmed_us_ts <- read_csv("./csse/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv")
-csse_deaths_us_ts <- read_csv("./csse/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_US.csv")
-uid <- read_csv("./csse/csse_covid_19_data/UID_ISO_FIPS_LookUp_Table.csv")
-daily_updates_ts <- read_csv("daily_updates_ts_us.csv")
-summary(uid)
+daily_fname <- str_c("../COVID-19/csse_covid_19_data/csse_covid_19_daily_reports_us/", d_lookup_str, ".csv")
+csse_today <- read_csv(daily_fname, col_types = "ccTddddddddddddcdd")
+csse_confirmed_us_ts <- read_csv("../COVID-19/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv",
+                                 col_types=str_c('cccddcccddc', 
+                                 str_c(rep("i", times=ts_date_count), collapse=""))
+                                 )
 
+csse_deaths_us_ts <- read_csv("../COVID-19/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_US.csv", 
+                              col_types=str_c('cccddcccddc', 
+                              str_c(rep("i", times=ts_date_count+1), collapse=""))
+                              )
+uid <- read_csv("../COVID-19/csse_covid_19_data/UID_ISO_FIPS_LookUp_Table.csv", col_types = "cccddcccddci")
+daily_updates_ts <- read_csv("daily_updates_ts_us.csv", col_types="ccDdTdcdddddddddddddd")
 ```
 
 Filter US ID Values
@@ -384,14 +388,14 @@ md_sum_ts_last30 <- md_sum_ts %>%
 
 ```{r}
 md_sum_cases_today <- md_sum_ts_last30 %>% 
-  select(date, cases, cases_delta, cases_per_hundred_thousand) %>% 
+  select(date, cases, cases_delta, cases_per_hundred_thousand, cases_delta_ma) %>% 
   tail(1)
 md_sum_cases_today
 ```
 
 ```{r}
 md_sum_deaths_today <- md_sum_ts_last30 %>% 
-  select(date, deaths, deaths_delta, deaths_per_hundred_thousand) %>% 
+  select(date, deaths, deaths_delta, deaths_per_hundred_thousand, deaths_delta_ma) %>% 
   tail(1)
 md_sum_deaths_today
 ```
@@ -402,12 +406,26 @@ mortality_rate * 100
 ```
 
 
-```{r message=FALSE, warning=FALSE}
+```{r, message=FALSE, warning=FALSE}
 xrange <-range(md_sum_ts_last30$date)
 yrange <- range(md_sum_ts_last30$cases_delta)
 
-cases_today_md <- md_sum_cases_today$cases_delta[1]
-cases_text_md <- paste("24 Hours: +", as.character(cases_today_md))
+cases_today_md <- round(md_sum_cases_today$cases_delta_ma[1], 0)
+cases_last_week_md <- md_sum_ts$cases_delta_ma[nrow(md_sum_ts)-7]
+
+perc_change_md <- round(((cases_today_md - cases_last_week_md)/cases_last_week_md),3)*100
+perc_change_txt <- function(x){
+  if (x > 0) {
+    out_text <- paste("+", as.character(abs(x)))
+    out_text
+  }
+  else {
+    out_text <- paste("-", as.character(abs(x)))
+    out_text
+  }
+}
+
+cases_text_md <- paste(as.character(today()),"\n","___24 Hours___\nNew Cases: +", as.character(cases_today_md), "\nPercent Change (7 Days): ", perc_change_txt(perc_change_md), "%\nData Source: Johns Hopkins University CSSE")
 
 md_p1 <- md_sum_ts_last30 %>% ggplot() + 
     geom_rect(md_sum_ts_last30, x=md_sum_ts_last30$date, y = md_sum_ts_last30$cases_delta_ma, mapping = aes(xmin = lag(date), xmax = date, fill = cases_dir), ymin = 0, ymax = Inf, alpha = 0.3) + 
@@ -419,8 +437,8 @@ md_p1 <- md_sum_ts_last30 %>% ggplot() +
     theme(legend.position = "none") +
     pq+
     ylim(0,max(md_sum_ts_last30$cases_delta_ma))+
-    annotate(geom = "text", x = xrange[1], y = yrange[2], label = paste("Note: 7 Day Moving Average", collapse = "\n"), hjust = 0, vjust = 1, size = 4)+jhu_caption+
-  labs(tag=cases_text_md, vjust= 1)
+    annotate(geom = "text", x = xrange[1], y = yrange[2], label = paste("Note: 7 Day Moving Average", collapse = "\n"), hjust = 0, vjust = 1, size = 4)+
+  labs(caption=cases_text_md, vjust= 0)
 md_p1
 ```
 
@@ -429,8 +447,12 @@ md_p1
 xrange <-range(md_sum_ts_last30$date)
 yrange <- range(md_sum_ts_last30$deaths_delta)
 
-deaths_today_md <- md_sum_deaths_today$deaths_delta[1]
-deaths_text_md <- paste("24 Hours: +", as.character(deaths_today_md))
+
+deaths_today_md <- round(md_sum_deaths_today$deaths_delta_ma[1],0)
+deaths_last_week_md <- md_sum_ts$deaths_delta_ma[nrow(md_sum_ts)-7]
+
+perc_deaths_md <- round(((deaths_today_md - deaths_last_week_md)/deaths_last_week_md),3)*100
+deaths_text_md <- paste(as.character(today()),"\n","___24 Hours___\nDeaths Today: +", as.character(deaths_today_md), "\nPercent Change (7 Days): ", perc_change_txt(perc_deaths_md), "%\nData Source: Johns Hopkins University CSSE")
 
 md_p2 <- md_sum_ts_last30 %>% ggplot() + 
     geom_rect(md_sum_ts_last30, x=md_sum_ts_last30$date, y = md_sum_ts_last30$deaths_delta, mapping = aes(xmin = lag(date), xmax = date, fill = deaths_dir), ymin = 0, ymax = Inf, alpha = 0.3) + 
@@ -443,7 +465,7 @@ md_p2 <- md_sum_ts_last30 %>% ggplot() +
     pq + 
     ylim(0,max(md_sum_ts_last30$deaths_delta))+
     annotate(geom = "text", x = xrange[1], y = yrange[2], label = paste("Note: 7 Day Moving Average", collapse = "\n"), hjust = 0, vjust = 1, size = 4)+jhu_caption+
-  labs(tag=deaths_text_md, vjust= 1)
+  labs(caption=deaths_text_md, vjust= 1)
 md_p2
 
 ```
@@ -462,8 +484,11 @@ montgomery_ts <- md_combined_ts %>%
 xrange <-range(montgomery_ts$date)
 yrange <- range(montgomery_ts$cases_delta)
 
-cases_today_moco <- montgomery_ts$cases_delta[length(montgomery_ts)]
-cases_text_moco <- paste("24 Hours: +", as.character(cases_today_moco))
+cases_today_moco <- round(montgomery_ts$cases_delta_ma[nrow(montgomery_ts)],0)
+cases_last_week_moco <- montgomery_ts$cases_delta_ma[nrow(montgomery_ts)-7]
+
+perc_change_moco <- round(((cases_today_moco - cases_last_week_moco)/cases_last_week_moco),3)*100
+cases_text_moco <- paste(as.character(today()),"\n","___24 Hours___\nNew Cases: +", as.character(cases_today_moco), "\nPercent Change (7 Days): ", perc_change_txt(perc_change_moco), "%\nData Source: Johns Hopkins University CSSE")
 
 mont_p1 <- montgomery_ts %>% ggplot() + 
     geom_rect(montgomery_ts, x=montgomery_ts$date, y = montgomery_ts$cases_delta, mapping = aes(xmin = lag(date), xmax = date, fill = cases_dir), ymin = 0, ymax = Inf, alpha = 0.3) + 
@@ -476,7 +501,7 @@ mont_p1 <- montgomery_ts %>% ggplot() +
     pq+
     ylim(0,max(montgomery_ts$cases_delta))+
     annotate(geom = "text", x = xrange[1], y = yrange[2], label = paste("Note: 7 Day Moving Average", collapse = "\n"), hjust = 0, vjust = 1, size = 4)+jhu_caption+
-    labs(tag=cases_text_moco, vjust= 1)
+    labs(caption=cases_text_moco, vjust= 1)
 mont_p1
 ```
 
@@ -484,8 +509,11 @@ mont_p1
 xrange <-range(montgomery_ts$date)
 yrange <- range(montgomery_ts$deaths_delta)
 
-deaths_today_moco <- montgomery_ts$deaths_delta[length(montgomery_ts)]
-deaths_text_moco <- paste("24 Hours: +", as.character(deaths_today_moco))
+deaths_today_moco <- round(montgomery_ts$deaths_delta_ma[nrow(montgomery_ts)],0)
+deaths_last_week_moco <- montgomery_ts$deaths_delta_ma[nrow(montgomery_ts)-7]
+
+perc_deaths_moco <- round(((deaths_today_moco - deaths_last_week_moco)/deaths_last_week_moco),3)*100
+deaths_text_moco <- paste(as.character(today()),"\n","___24 Hours___\nDeaths Today: +", as.character(deaths_today_moco), "\nPercent Change (7 Days): ", perc_change_txt(perc_deaths_moco), "%\nData Source: Johns Hopkins University CSSE")
 
 mont_p2 <- montgomery_ts %>% ggplot() + 
     geom_rect(montgomery_ts, x=montgomery_ts$date, y = montgomery_ts$deaths_delta_ma, mapping = aes(xmin = lag(date), xmax = date, fill = deaths_dir), ymin = 0, ymax = Inf, alpha = 0.3) + 
@@ -498,7 +526,7 @@ mont_p2 <- montgomery_ts %>% ggplot() +
     pq + 
     ylim(0,max(montgomery_ts$deaths_delta))+
     annotate(geom = "text", x = xrange[1], y = yrange[2], label = paste("Note: 7 Day Moving Average", collapse = "\n"), hjust = 0, vjust = 1, size = 4)+jhu_caption+
-    labs(tag=deaths_text_moco, vjust= 1)
+    labs(caption=deaths_text_moco, vjust= 1)
 mont_p2
 ```
 
@@ -515,8 +543,11 @@ frederick_ts <- md_combined_ts %>%
 xrange <-range(frederick_ts$date)
 yrange <- range(frederick_ts$cases_delta)
 
-cases_today_fr <- frederick_ts$cases_delta[length(frederick_ts)]
-cases_text_fr <- paste("24 Hours: +", as.character(cases_today_fr))
+cases_today_fr <- round(frederick_ts$cases_delta_ma[nrow(frederick_ts)])
+cases_last_week_fr <- frederick_ts$cases_delta_ma[nrow(frederick_ts)-7]
+
+perc_change_fr <- round(((cases_today_fr - cases_last_week_fr)/cases_last_week_fr),3)*100
+cases_text_fr <- paste(as.character(today()),"\n","___24 Hours___\nNew Cases: +", as.character(cases_today_fr), "\nPercent Change (7 Days): ", perc_change_txt(perc_change_fr), "%\nData Source: Johns Hopkins University CSSE")
 
 fred_p1 <- frederick_ts %>% ggplot() + 
     geom_rect(frederick_ts, x=frederick_ts$date, y = frederick_ts$cases_delta, mapping = aes(xmin = lag(date), xmax = date, fill = cases_dir), ymin = 0, ymax = Inf, alpha = 0.3) + 
@@ -529,7 +560,7 @@ fred_p1 <- frederick_ts %>% ggplot() +
     pq+
     ylim(0,max(frederick_ts$cases_delta))+
     annotate(geom = "text", x = xrange[1], y = yrange[2], label = paste("Note: 7 Day Moving Average", collapse = "\n"), hjust = 0, vjust = 1, size = 4)+jhu_caption+
-    labs(tag=cases_text_fr, vjust= 1)
+    labs(caption=cases_text_fr, vjust= 1)
 fred_p1
 ```
 
@@ -538,8 +569,11 @@ Percent Change in Deaths (5 Day Moving Average)
 xrange <-range(frederick_ts$date)
 yrange <- range(frederick_ts$deaths_delta)
 
-deaths_today_fr <- frederick_ts$deaths_delta[length(frederick_ts)]
-deaths_text_fr <- paste("24 Hours: +", as.character(deaths_today_fr))
+deaths_today_fr <- round(frederick_ts$deaths_delta[nrow(frederick_ts)],0)
+deaths_last_week_fr <- frederick_ts$deaths_delta_ma[nrow(frederick_ts)-7]
+
+perc_deaths_fr <- round(((deaths_today_fr - deaths_last_week_fr)/deaths_last_week_fr),3)*100
+deaths_text_fr <- paste(as.character(mdy(as.character(today()))),"\n","___24 Hours___\nDeaths Today: +", as.character(deaths_today_fr), "\nPercent Change (7 Days): ", perc_change_txt(perc_deaths_fr), "%\nData Source: Johns Hopkins University CSSE")
 
 fred_p2 <- frederick_ts %>% ggplot() + 
     geom_rect(frederick_ts, x=frederick_ts$date, y = frederick_ts$deaths_delta_ma, mapping = aes(xmin = lag(date), xmax = date, fill = deaths_dir), ymin = 0, ymax = Inf, alpha = 0.3) + 
@@ -553,7 +587,7 @@ fred_p2 <- frederick_ts %>% ggplot() +
     ylim(0,max(frederick_ts$deaths_delta))+
     annotate(geom = "text", x = xrange[2], y = yrange[2], label = paste("Note: 7 Day Moving Average", collapse = "\n"), hjust = 1, vjust = 1, size = 4)+
     jhu_caption+
-    labs(tag=deaths_text_fr, vjust= 1)
+    labs(caption=deaths_text_fr, vjust= 1)
 
 fred_p2
 

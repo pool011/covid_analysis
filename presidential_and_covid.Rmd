@@ -1,5 +1,6 @@
 ---
-title: "R Notebook"
+title: "Modeling Election Results with COVID-19 Transmission Rates"
+author: "Jonah Pool"
 output: html_notebook
 ---
 
@@ -9,7 +10,9 @@ library(tidyverse)
 library(magrittr)
 library(ggpubr)
 library(lubridate)
-#library(DescTools)
+library(DescTools)
+library(modelr)
+library(hexbin)
 #library(effsize)
 #library(pwr)
 #library(lmerTest)
@@ -53,10 +56,7 @@ uid <- read_csv("../COVID-19/csse_covid_19_data/UID_ISO_FIPS_LookUp_Table.csv", 
 mask_use <- read_csv("../election_night2020/context/covid/raw/mask-use-by-county.csv", col_names = c("FIPS","NEVER","RARELY","SOMETIMES","FREQUENTLY","ALWAYS"), col_types = "dddddd", skip=1)
 election_results_raw <- read_csv("../election_night2020/results/leip_natl_data.csv", col_types=str_c("dccdddddddddddddddddddddddddddddddddddddd"))
 
-spec(election_results_raw)
-```
 
-```{r}
 election_results_clean <- election_results_raw %>% 
   pivot_longer(`Joseph R. Biden Jr.`:last_col(), names_to = "Candidate", values_to = "Votes")
 election_ratios <- election_results_clean %>%
@@ -79,6 +79,7 @@ election_ratios <- election_results_clean %>%
   #mutate(`Donald J. Trump` = cut(`Donald J. Trump`, breaks = c(-Inf, seq(5, 100, by = 5)), labels = c(paste(seq(5,100,by=5), rep("%"))))) %>% 
   rename(Admin2 = `Geographic Name`)
 ```
+
 
 ```{r}
 clean_uid <- uid %>% 
@@ -153,6 +154,7 @@ summary(cases_votes_sum)
 
 ```
 ```{r}
+
 summary(lm(cases_per_100k ~ score, data=cases_votes))
 
 ggscatter(cases_votes, y="cases_per_100k", x=c("score", "NEVER", "ALWAYS"), add="reg.line", cor.coef = T)
@@ -162,7 +164,7 @@ ggscatter(cases_votes, y="Donald J. Trump", x=c("score", "NEVER", "ALWAYS"), add
 
 ```{r}
 training_data <- cases_votes_sum %>% 
-  select(max_case_rate, max_change, avg, ALWAYS, NEVER, `Donald J. Trump`)# %>% #NEVER, ALWAYS, Winner) %>% 
+  select(max_case_rate, max_change, avg, score, `Donald J. Trump`)# %>% #NEVER, ALWAYS, Winner) %>% 
   #mutate(Winner = fct_recode(Winner, Trump='Donald J. Trump', Biden='Joseph R. Biden Jr.'))
 
 set.seed(100)
@@ -171,179 +173,93 @@ validation_index <- createDataPartition(training_data$`Donald J. Trump`, p=0.80,
 validation <- training_data[-validation_index,]
 training_data <- training_data[validation_index,]
 summary(training_data)
+```
+```{r}
+model_lm <- lm(`Donald J. Trump` ~ max_case_rate + max_change + avg + score, data = training_data)
+summary(model_lm)
+model_lm_aov <- aov(model_lm)
+summary(model_lm_aov)
+```
+```{r}
+plot(model_lm, c(1,2,3,4,5))
+training_data <- training_data %>% 
+  add_residuals(model_lm, "resids")
+#training_data <- rescale(training_data, c(-2,2))
 
+ggplot(training_data, aes(x=`Donald J. Trump`, y=unname(resids))) + 
+  geom_hex(bins =50)+
+  theme_pubr()
+```
+```{r}
+training_data2 <- training_data %>% 
+  #filter(abs(resids)<5) %>% 
+  add_predictions(model_lm)
+training_data2
+ggplot(training_data2, aes(score,pred)) +
+  geom_hex(bins = 50)
+ggplot(training_data2, aes(score,`Donald J. Trump`)) +
+  geom_hex(bins = 50)
 
+validation2 <- validation %>% 
+  add_predictions(model_lm)
+ggplot(validation2, aes(score,pred)) +
+  geom_hex(bins = 50)+
+  ylim(0,100)
+ggplot(validation2, aes(score,`Donald J. Trump`)) +
+  geom_hex(bins = 50)+
+  ylim(-1,100)
+
+```
+```{r}
+validation3 <- validation %>% 
+  add_residuals(model_lm, "resids") %>% 
+  add_predictions(model_lm)
+#validation3 <- rescale(validation3, c(-2,2))
+plot(validation$`Donald J. Trump`,validation3$`Donald J. Trump`-validation3$pred)
 ```
 
 ```{r}
-preProcess_missingdata_model <- preProcess(training_data, method = 'medianImpute')
-training_data <- predict(preProcess_missingdata_model, newdata=training_data)
-```
+# ALWAYS, FREQUENTLY, SOMETIMES, RARELY, NEVER
+training_data <- cases_votes_sum %>% 
+  select(ALWAYS, FREQUENTLY, SOMETIMES, RARELY, NEVER, Winner, max_case_rate, max_change, avg,`Donald J. Trump`)
 
-
-Dummy models
-```{r, eval=FALSE}
-
-dummies_model <- dummyVars(`Donald J. Trump` ~ ., data=training_data)
-trainData_mat <- predict(dummies_model, newdata = training_data)
-training_data <- data.frame(trainData_mat)
-```
-
-Data Preprocessing
-```{r}
-preProcess_range_model <- preProcess(training_data, method="range", rangeBounds = c(0,1))
-training_data <- predict(preProcess_range_model, newdata=training_data)
-
-xvar <- training_data[,1:5]
-yvar <- training_data$`Donald J. Trump`
-
-training_data$`Donald J. Trump` <- yvar
-training_data
-apply(training_data[,1:6], 2, FUN=function(x){c('min'=min(x), 'max'=max(x))})
-```
-
-```{r}
-modelLookup("rf")
-```
-```{r}
-
-
-#png("feature_plot_masks.png", width=900, height=900, units = 'px')
-#featurePlot(x=xvar[4:5], y=yvar, plot="ellipse")
-#dev.off()
-
-png("feature_plot_cases.png", width=900, height=900, units = 'px')
-featurePlot(x=xvar[1:3], y=yvar, plot="ellipse")
-dev.off()
-
-test_data <- predict(preProcess_missingdata_model, newdata = validation)
-test_data2 <- test_data#predict(preProcess_range_model, newdata=test_data)
-apply(test_data[,1:6], 2, FUN=function(x){c('min'=min(x), 'max'=max(x))})
-apply(test_data2[,1:6], 2, FUN=function(x){c('min'=min(x), 'max'=max(x))})
-```
-
-```{r, eval=FALSE}
-set.seed(100)
-registerDoSEQ()
-model_luna <- train(`Donald J. Trump` ~ ., data = training_data, method = 'earth')
-fitted <- predict(model_luna)
-model_luna
-
-```
-
-Prepare and Run Tests
-```{r, eval=FALSE}
-
-
-head(test_data2)
-
-predicted <- predict(model_luna, test_data2)
-head(predicted)
-```
-
-```{r, eval=FALSE}
-confusionMatrix(reference=test_data$`Donald J. Trump`, data = predicted, mode = "everything", positive = "Trump")
-```
-```{r}
-registerDoSEQ()
-# Define the training control
-fitControl <- trainControl(
-    method = 'cv',                   # k-fold cross validation
-    number = 20,                      # number of folds
-    savePredictions = 'final',       # saves predictions for optimal tuning parameter
-    #classProbs = T,                  # should class probabilities be returned
-    summaryFunction=defaultSummary  # results summary function
-) 
-# Step 1: Tune hyper parameters by setting tuneLength
-set.seed(100)
-model_luna2 <- train(`Donald J. Trump` ~ ., data = training_data, method = 'lm', tuneLength = 5, trControl = fitControl)
-model_luna2
-```
-
-```{r}
-# Step 2: Predict on testData and Compute the confusion matrix
-predicted <- predict(model_luna2, test_data2)
-#confusionMatrix(reference = validation$`Donald J. Trump`, data = predicted, mode='everything', positive='Trump')
-model <- data.frame(index = seq(1:length(predicted)), y = predicted, actual = test_data2$`Donald J. Trump`) %>% pivot_longer(y:actual, names_to = "category", values_to = "trump_vote")
-ggscatter(model, x="index", y="trump_vote", color="category")
-```
-
-```{r}
-varimp_mars <- varImp(model_luna2)
-plot(varimp_mars)
-```
-
-```{r}
 set.seed(100)
 
-cl <- makePSOCKcluster(2)
-registerDoParallel(cl)
-#registerDoSEQ()
-
-model_adaboost <- train(`Donald J. Trump` ~ ., data = training_data, method = 'bridge', tuneLength = 10, trControl = fitControl)
-stopCluster(cl)
-model_adaboost
+validation_index <- createDataPartition(training_data$Winner, p=0.80, list=FALSE)
+validation <- training_data[-validation_index,]
+training_data <- training_data[validation_index,]
+summary(training_data)
 ```
+
 
 ```{r}
-predicted2 <- predict(model_adaboost, test_data2)
-#confusionMatrix(reference = validation$`Donald J. Trump`, data = predicted2, mode="everything", positive = "Trump")
+model_lm1 <- lm(`Donald J. Trump` ~ ALWAYS+max_case_rate + max_change + avg, data = training_data, family="binomial")
+summary(model_lm1)
 ```
+
 
 ```{r}
-cl <- makePSOCKcluster(2)
-registerDoParallel(cl)
-set.seed(100)
-model_rf <- train(`Donald J. Trump` ~ ., data = training_data, method = 'rf', tuneLength = 4, trControl = fitControl)
-stopCluster(cl)
-model_rf
-```
-```{r, eval=FALSE}
-predicted4 <- predict(model_rf, test_data2)
-confusionMatrix(reference = validation$`Donald J. Trump`, data = predicted4, mode="everything", positive = "Trump")
+model_lm2 <- lm(`Donald J. Trump` ~ FREQUENTLY+max_case_rate + max_change + avg, data = training_data, family="binomial")
+summary(model_lm2)
 ```
 
-
-
-
-
-```{r, eval = TRUE}
-set.seed(100)
-gbmGrid <- expand.grid(interaction.depth = c(1,5,9), 
-                       n.trees = (1:30)*50,
-                       shrinkage=0.1,
-                       n.minobsinnode=20)
-
-cl <- makePSOCKcluster(2)
-registerDoParallel(cl)
-model_xgbDART <- train(`Donald J. Trump` ~ ., data = training_data, method = 'gbm', tuneGrid = gbmGrid, trControl = fitControl)#, metric="Accuracy")
-stopCluster(cl)
-model_xgbDART
-```
 
 ```{r}
-trellis.par.set(caretTheme())
-plot(model_xgbDART)
-```
-
-```{r, eval=FALSE}
-predicted3 <- predict(model_xgbDART, newdata=test_data2)
-test_data3 <- test_data2 %>% mutate(index = seq(1:length(`Donald J. Trump`)))
-model_3 <- data.frame(index = seq(1:length(predicted3)), prediction = predicted3, actual = test_data2$`Donald J. Trump`) %>% pivot_longer(prediction:actual, names_to = "category", values_to = "trump_vote") %>% inner_join(test_data3, by="index")
-t.test(trump_vote ~ category, data = model_3, paired=T, alternative= "greater")
-#confusionMatrix(reference=validation$`Donald J. Trump`, data = predicted3, mode='everything', positive='Trump')
-ggscatter(sample(model_3), x=c("NEVER","ALWAYS", "max_case_rate", "max_change", "avg"), y="trump_vote", color="category", facet.by = "category")#, add="reg.line", cor.coef=T)
+model_lm3 <- lm(`Donald J. Trump` ~ SOMETIMES+max_case_rate + max_change + avg, data = training_data, family="binomial")
+summary(model_lm3)
 ```
 
 
-```{r, eval=FALSE}
-model_3 <- data.frame(prediction = predicted3, actual = validation$`Donald J. Trump`)# %>% pivot_longer(prediction:actual, names_to = "category", values_to = "`Donald J. Trump`") %>% group_by(category, `Donald J. Trump`) %>% summarize(frequency = n())
-data.frame(index = seq(1:length(predicted)), y = predicted3, actual = test_data2$`Donald J. Trump`) %>% pivot_longer(y:actual, names_to = "category", values_to = "trump_vote")
-
-
-#chisq_table <- model_3 %>% group_by(`Donald J. Trump`) %>% pivot_wider(names_from = "category", values_from = "frequency")
-#chisq_table2 <- data.frame(prediction = chisq_table$prediction, actual = chisq_table$actual)
-#fisher.test(chisq_table2)
+```{r}
+model_lm4 <- lm(`Donald J. Trump` ~ RARELY+max_case_rate + max_change + avg, data = training_data, family="binomial")
+summary(model_lm4)
 ```
 
 
+```{r}
+model_lm5 <- lm(`Donald J. Trump` ~ NEVER+max_case_rate + max_change + avg, data = training_data, family="binomial")
+summary(model_lm5)
+#model_lm_aov <- aov(model_lm)
+#summary(model_lm_aov)
+#exp()
+```

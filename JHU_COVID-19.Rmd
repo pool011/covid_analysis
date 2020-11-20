@@ -3,9 +3,9 @@ title: "JHU COVID-19 Data by State and National"
 author: "Jonah Pool"
 date: "6/8/2020"
 output:
-  word_document: default
-  pdf_document: default
   html_document: default
+  pdf_document: default
+  word_document: default
 update: 6/8/2020
 ---
 
@@ -182,18 +182,18 @@ Load Johns Hopkins Univ. CSSE Data
 ```{r}
 ts_date_count <- today() - ymd(20200122)
 
-daily_fname <- str_c("./csse/csse_covid_19_data/csse_covid_19_daily_reports_us/", d_lookup_str, ".csv")
+daily_fname <- str_c("../COVID-19/csse_covid_19_data/csse_covid_19_daily_reports_us/", d_lookup_str, ".csv")
 csse_today <- read_csv(daily_fname, col_types = "ccTddddddddddddcdd")
-csse_confirmed_us_ts <- read_csv("./csse/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv",
+csse_confirmed_us_ts <- read_csv("../COVID-19/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv",
                                  col_types=str_c('cccddcccddc', 
                                  str_c(rep("i", times=ts_date_count), collapse=""))
                                  )
 
-csse_deaths_us_ts <- read_csv("./csse/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_US.csv", 
+csse_deaths_us_ts <- read_csv("../COVID-19/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_US.csv", 
                               col_types=str_c('cccddcccddc', 
                               str_c(rep("i", times=ts_date_count+1), collapse=""))
                               )
-uid <- read_csv("./csse/csse_covid_19_data/UID_ISO_FIPS_LookUp_Table.csv", col_types = "iccddcccddci")
+uid <- read_csv("../COVID-19/csse_covid_19_data/UID_ISO_FIPS_LookUp_Table.csv", col_types = "iccddcccddci")
 daily_updates_ts <- read_csv("daily_updates_ts_us.csv", col_types="ccDdTdcdddddddddddddd")
 ```
 
@@ -722,7 +722,16 @@ nation %<>%
 nation_last30 <- nation %>% 
   filter(date %in% sinceMarch16)
 nation_today <- tail(nation_last30, 1) %>% select(-cases_it,-deaths_it,lag_cases,-relative,-cases_delta_ma,-cases_dir,-cases_perc_ma,-lag_deaths,-deaths_delta_ma,-deaths_dir,-deaths_perc_ma)
-nation_today
+```
+
+
+```{r}
+nation_today %>% select(date, cases, cases_delta, cases_per_hundred_thousand)
+```
+
+
+```{r}
+nation_today %>% select(date, deaths, deaths_delta, deaths_per_hundred_thousand)
 ```
 Break Up Dates into Waves
 ```{r}
@@ -737,7 +746,7 @@ yrange <- range(nation_last30$cases_delta_ma)
 nat_p1 <- nation_last30 %>% 
   ggplot() + 
     geom_line(aes(x = date, y = cases_delta_ma), color = "blue", size = 1.2)+
-    geom_smooth(aes(x=date, y=cases_delta), size=1, method="loess", se=FALSE)+
+    #geom_smooth(aes(x=date, y=cases_delta), size=1, method="loess", se=FALSE)+
     geom_rect(nation_last30, x=nation_last30$date, y = nation_last30$cases_delta_ma, mapping = aes(xmin = lag(date), xmax = date, fill = cases_dir), ymin = 0, ymax = Inf, alpha = 0.3) + 
     scale_color_manual(values = "blue")+
     scale_fill_manual(values = c("blue", "yellow"))+
@@ -791,7 +800,7 @@ nat_p2 <- nation_last30 %>% bar_chart_ts(nation_last30$cases, custom.fill = blue
           panel.grid.major.y=element_line(color="dark grey", size=0.1),
           panel.grid.minor.y=element_line(color="dark grey", size=0.1),
           axis.ticks=element_line(color="white")) +
-  scale_y_continuous(breaks = breaks_extended(n=5), labels = scales::label_number_si(accuracy = 1))+geom_smooth(aes(y=cases, x=date), method="lm", se=TRUE)
+  scale_y_continuous(breaks = breaks_extended(n=5), labels = scales::label_number_si(accuracy = 1))#+geom_smooth(aes(y=cases, x=date), method="lm", se=TRUE)
 nat_p2
 ```
 
