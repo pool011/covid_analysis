@@ -156,6 +156,6 @@ ggscatter(cases_votes, y="Donald J. Trump", x=c("score", "NEVER", "ALWAYS"), add
 ```
 
 ```{r}
-
+tsne()
 ```
 
