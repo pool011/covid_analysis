@@ -15,29 +15,22 @@ library(magrittr)
 library(ggplot2)
 library(ggpubr)
 library(flextable)
+library(sjPlot)
 library(lubridate)
 library(DescTools)
 library(effsize)
 library(pwr)
 library(lmerTest)
-library(sjPlot)
-library(webshot)
 library(scales)
-library(shiny)
-library(maps)
-library(plotly)
 library(kableExtra)
 library(knitr)
 library(fpp2)
 
-library(sf)
-library(tmap)
-library(cartography)
 library(treemap)
 
-library(ggspatial)
-library(rnaturalearth)
-library(rnaturalearthdata)
+#library(ggspatial)
+#library(rnaturalearth)
+#library(rnaturalearthdata)
 ```
 
 Constants
@@ -142,7 +135,7 @@ movingAverage <- function(x, n=14, centered=TRUE) {
 }
 
 bar_chart_ts <- function(df, y, custom.fill = blue.fill.10, lab.title, y.lim = max(y)) {
-  plot <- ggplot(df, aes(x = date, y = y, fill = "")) + 
+  plot <- ggplot(df, aes(x = date, y = y)) + 
     geom_col() +
     scale_fill_manual(values = custom.fill) +
     labs(y = "", title = lab.title, x = "Date") +
@@ -153,7 +146,7 @@ bar_chart_ts <- function(df, y, custom.fill = blue.fill.10, lab.title, y.lim = m
 }
 
 line_chart_ts <- function(df, y, custom.fill = blue.fill.10, lab.title, y.lim = max(y)) {
-  plot <- ggplot(df, aes(x = date, y = y, color = "", fill = "")) + 
+  plot <- ggplot(df, aes(x = date, y = y)) + 
     geom_line(size = 1.2) +
     scale_fill_manual(values = custom.fill) +
     scale_color_manual(values = custom.fill)+
@@ -165,7 +158,7 @@ line_chart_ts <- function(df, y, custom.fill = blue.fill.10, lab.title, y.lim = 
 }
 
 line_chart_ma_ts <- function(df, y, custom.fill = blue.fill.10, lab.title, y.lim = max(y)) {
-  plot <- ggplot(df, aes(x = date, y = y, color = "", fill = "")) + 
+  plot <- ggplot(df, aes(x = date, y = y)) + 
     geom_smooth(size = 1.2) +
     scale_fill_manual(values = custom.fill) +
     scale_color_manual(values = custom.fill)+
@@ -402,7 +395,7 @@ deaths_ts_states <- deaths_ts %>%
   select(-Admin2) %>% 
   group_by(Province_State, date) %>% 
   summarize(deaths = sum(deaths)) %>%
-  inner_join(uid_states, key = "Province_State") %>%
+  inner_join(uid_states, key = "Province_State", by="Province_State") %>%
   ungroup() %>% 
   group_by(Province_State) %>%
   mutate(date = mdy(date)) %>%
@@ -487,7 +480,7 @@ top5cases_today_pht <- cases_ts_states %>%
 
 top5deaths_today<- deaths_ts_states %>%
   filter(date == day) %>% 
-  top_n(5, deaths_delta)
+  top_n(25, deaths_delta)
 
 top5deaths_today_pht <- deaths_ts_states %>%
   filter(date == day) %>% 
@@ -589,8 +582,10 @@ p4
 ```{r}
 top3_states <- deaths_ts_states %>% 
   filter(date == day) %>% 
-  top_n(3, deaths)
-top3_states$state
+  top_n(7, deaths)
+top3_states
+
+#top3_states$state
 top3_sum <- top3_states %>% 
   summarize(deaths = sum(deaths), state = "Top 3")
 rest <- deaths_ts_states %>% 
@@ -599,8 +594,8 @@ rest <- deaths_ts_states %>%
   summarize(deaths = sum(deaths), state = "Other")
 
 compare <- full_join(rest, top3_sum)
-compare
-top3_sum$deaths/(rest$deaths + top3_sum$deaths)
+#compare
+#top3_sum$deaths/(rest$deaths + top3_sum$deaths)
 
 p7 <- ggplot(compare, aes(x=state, y=deaths, fill = c("blue", "orange")))+
   geom_col() + 
@@ -622,12 +617,12 @@ blue_states_ts <- combined_ts_states %>%
 
 red_v_blue <- full_join(red_states_ts, blue_states_ts)
 red_v_blue %<>% mutate(vote = factor(vote)) %>% mutate(vote = fct_rev(vote))
-red_v_blue
+#red_v_blue
 
 red_v_blue_sum <- red_v_blue %>% 
   group_by(vote) %>% 
   summarise(average_death_rate = mean(deaths_per_hundred_thousand), average_case_rate=mean(cases_per_hundred_thousand), stdev=sd(cases_per_hundred_thousand))
-red_v_blue_sum
+#red_v_blue_sum
 
 ```
 ```{r}
@@ -726,16 +721,18 @@ nation_today <- tail(nation_last30, 1) %>% select(-cases_it,-deaths_it,lag_cases
 
 
 ```{r}
-nation_today %>% select(date, cases, cases_delta, cases_per_hundred_thousand)
-```
+typology <- data.frame(
+  col_keys = c("", "Total", "24 Hour Change", "Total Per Hundred Thousand")
+)
 
+nation_today_cases <- nation_today %>% mutate(type="Confirmed Cases", cases_per_hundred_thousand = round(cases_per_hundred_thousand, 2)) %>% select(type, date, cases, cases_delta, cases_per_hundred_thousand) %>% rename(Date = date, "Total" = cases, "24 Hour Change" = cases_delta, "Total Per 100,000"= cases_per_hundred_thousand)
 
-```{r}
-nation_today %>% select(date, deaths, deaths_delta, deaths_per_hundred_thousand)
-```
-Break Up Dates into Waves
-```{r}
-#nation_last30 %>%
+nation_today_deaths <- nation_today %>% mutate(type="Confirmed Deaths", deaths_per_hundred_thousand = round(deaths_per_hundred_thousand, 2)) %>% select(type, date, deaths, deaths_delta, deaths_per_hundred_thousand) %>% rename(Date = date, "Total" = deaths, "24 Hour Change" = deaths_delta, "Total Per 100,000"= deaths_per_hundred_thousand)
+
+nation_today_table <- full_join(nation_today_cases, nation_today_deaths)
+ft <- flextable(nation_today_table) 
+ft <- autofit(ft)
+ft
 ```
 
 New Cases
@@ -744,27 +741,31 @@ xrange <-range(nation_last30$date)
 yrange <- range(nation_last30$cases_delta_ma)
 
 nat_p1 <- nation_last30 %>% 
-  ggplot() + 
-    geom_line(aes(x = date, y = cases_delta_ma), color = "blue", size = 1.2)+
+  ggplot(aes(x = date, y = cases_delta_ma)) + 
+    geom_line(color = "blue", size = 1.2)+
+    geom_area(fill="blue", alpha = 0.3)+
     #geom_smooth(aes(x=date, y=cases_delta), size=1, method="loess", se=FALSE)+
-    geom_rect(nation_last30, x=nation_last30$date, y = nation_last30$cases_delta_ma, mapping = aes(xmin = lag(date), xmax = date, fill = cases_dir), ymin = 0, ymax = Inf, alpha = 0.3) + 
+    #geom_rect(nation_last30, x=nation_last30$date, y = nation_last30$cases_delta_ma, mapping = aes(xmin = lag(date), xmax = date, fill = cases_dir), ymin = 0, ymax = Inf, alpha = 0.3) + 
     scale_color_manual(values = "blue")+
     scale_fill_manual(values = c("blue", "yellow"))+
-    scale_y_continuous(breaks = breaks_extended(n=5), labels = scales::label_number_si(accuracy = 10))+
+    scale_x_date(date_breaks = "3 weeks", date_labels = "%b %d")+
+    scale_y_continuous(breaks = breaks_extended(n=5), labels = scales::label_number_si(accuracy = 10), name = "Daily Cases", sec.axis = sec_axis(trans=~./nation_last30$population * 100000, name = "Per Hundred Thousand People"))+
     labs(y = "", title = "Daily New Cases", x = "Days") +
-    theme(legend.position = "none", 
+    theme(aspect.ratio = 6/14,
+          legend.position = "none", 
           panel.grid.major.y=element_line(color="dark grey", size=0.1),
+          panel.grid.major.x=element_line(color="dark grey", size=0.1),
           panel.grid.minor.y=element_line(color="dark grey", size=0.1),
-          axis.ticks=element_line(color="white")) +
+          axis.ticks=element_line(color="black")) +
     pq+
     #ylim(0,max(nation_last30$cases_delta))+
-    annotate(geom = "text", x = xrange[2], y = 1000, label = paste("Note: 7 Day Moving Average", collapse = "\n"), hjust = 1, vjust = 0, size = 4)+jhu_caption+
+    annotate(geom = "text", x = xrange[1], y = yrange[2], label = paste("Note: 7 Day Moving Average", collapse = "\n"), hjust = 0, vjust = 1, size = 4)+jhu_caption
   #First Wave Marker
-  geom_vline(xintercept=mdy("03-16-20"),color = "red", size = 1.2) + 
+  #geom_vline(xintercept=mdy("03-16-20"),color = "red", size = 1.2) + 
   #Second Wave Marker
-  geom_vline(xintercept=mdy("06-11-20"),color = "green", size = 1.2)+
+  #geom_vline(xintercept=mdy("06-11-20"),color = "green", size = 1.2)+
   #Third Wave Marker
-  geom_vline(xintercept=mdy("09-12-20"),color = "purple", size = 1.2)
+  #geom_vline(xintercept=mdy("09-12-20"),color = "purple", size = 1.2)
 
 nat_p1
 ```
@@ -774,71 +775,76 @@ Percent Change in Deaths (5 Day Moving Average)
 xrange <-range(nation_last30$date)
 yrange <- range(nation_last30$deaths_delta_ma)
 
-nat_p4 <- nation_last30 %>% ggplot() + 
-    geom_rect(nation_last30, x=nation_last30$date, y = nation_last30$deaths_delta_ma, mapping = aes(xmin = lag(date), xmax = date, fill = deaths_dir), ymin = 0, ymax = Inf, alpha = 0.3) + 
+nat_p4 <- nation_last30 %>% ggplot(aes(x=date,y=deaths_delta_ma)) + 
+    #geom_rect(nation_last30, x=nation_last30$date, y = nation_last30$deaths_delta_ma, mapping = aes(xmin = lag(date), xmax = date, fill = deaths_dir), ymin = 0, ymax = Inf, alpha = 0.3) + 
     geom_line(aes(x = date, y = deaths_delta_ma, color = ""), size = 1.2) +
+    geom_area(fill="red", alpha = 0.3)+
+    geom_area(data=nation_last30[nrow(nation_last30):nrow(nation_last30)-14,], mapping=aes(x=date, y=deaths_delta_ma), fill = "red")+
     scale_fill_manual(values = c("red", "green"))+
     scale_color_manual(values = red.fill.5)+
-    scale_y_continuous(breaks = breaks_extended(n=5), labels = scales::label_number(accuracy = 1))+
+    scale_x_date(date_breaks = "3 weeks", date_labels = "%b %d")+
+    scale_y_continuous(breaks = breaks_extended(n=6), labels = scales::label_number(accuracy = 1), name = "Daily Cases", sec.axis = sec_axis(trans=~./nation_last30$population * 1000000, name = "Per Million People"))+
     labs(y = "", title = "Daily Deaths", x = "Date") +
-    theme(legend.position = "none", 
+    theme(aspect.ratio = 6/14,
+          legend.position = "none", 
           panel.grid.major.y=element_line(color="dark grey", size=0.1),
+          panel.grid.major.x=element_line(color="dark grey", size=0.1),
           panel.grid.minor.y=element_line(color="dark grey", size=0.1),
-          axis.ticks=element_line(color="white")) +
+          axis.ticks=element_line(color="black")) +
     pq + 
     #ylim(0,max(nation_last30$deaths_delta_ma))+
-    annotate(geom = "text", x = xrange[2], y = yrange[2], label = paste("Note: 7 Day Moving Average", collapse = "\n"), hjust = 1, vjust = 0, size = 4)+jhu_caption
+    annotate(geom = "text", x = xrange[2], y = yrange[2], label = paste("Note: 7 Day Moving Average", collapse = "\n"), hjust = 1, vjust = 1, size = 4)+jhu_caption
 nat_p4
 
 ```
 
 Total Cases (in millions)
-```{r}
-nat_p2 <- nation_last30 %>% bar_chart_ts(nation_last30$cases, custom.fill = blue.fill.5, lab.title = "Total Cases")+
-  jhu_caption+geom_hline(yintercept=max(nation_last30$cases), color="red")+
-  theme(legend.position = "none", 
+```{r, warning = FALSE}
+nat_p2 <- nation_last30 %>% ggplot(aes(nation_last30, x=date, y=cases))+
+  geom_line(size=1.1, color="#0016bd")+
+  labs(title = "Cumulative Cases", x = "Date")+
+  jhu_caption+
+    theme(aspect.ratio = 6/14,
+          legend.position = "none", 
           panel.grid.major.y=element_line(color="dark grey", size=0.1),
+          panel.grid.major.x=element_line(color="dark grey", size=0.1),
           panel.grid.minor.y=element_line(color="dark grey", size=0.1),
-          axis.ticks=element_line(color="white")) +
-  scale_y_continuous(breaks = breaks_extended(n=5), labels = scales::label_number_si(accuracy = 1))#+geom_smooth(aes(y=cases, x=date), method="lm", se=TRUE)
+          axis.ticks=element_line(color="black")) +
+  scale_x_date(date_breaks = "3 weeks", date_labels = "%b %d")+
+  scale_y_continuous(breaks = breaks_extended(n=10), labels = scales::label_number_si(accuracy = 1), name  = "Total", sec.axis = sec_axis(trans=~./(nation_last30$population) * 1000, name = "Per Thousand People"))+
+  geom_area(alpha = 0.3, fill="blue")+
+  geom_hline(yintercept=max(nation_last30$cases), color="red")+
+  geom_hline(yintercept=nation_last30$cases[nrow(nation_last30)-14], color="green")+pq
 nat_p2
 ```
 
-Total Cases (Per 100,000  People)
-```{r}
-#model.p3 <- drm(nation_last30, formula = nation_last30$cases_per_hundred_thousand ~ nation_last30$date)
-#summary(model.p3)
-#model.p3$coefficients
-nat_p3 <- nation_last30 %>% bar_chart_ts(nation_last30$cases_per_hundred_thousand, custom.fill = blue.fill.5, lab.title = "Total Cases (Per 100,000 People)")+ scale_y_continuous(breaks = breaks_extended(n=5), labels = scales::label_number_si(accuracy = 0.5))+
-  theme(legend.position = "none", 
-          panel.grid.major.y=element_line(color="dark grey", size=0.1),
-          panel.grid.minor.y=element_line(color="dark grey", size=0.1),
-          axis.ticks=element_line(color="white"))
-    # + geom_smooth(method = "lm", se = FALSE)+jhu_caption
-nat_p3
-```
-
 Deaths Total
-```{r}
-nat_p5 <- nation_last30 %>% bar_chart_ts(nation_last30$deaths, custom.fill = red.fill.5, lab.title = "Cumulative Deaths")+jhu_caption+scale_y_continuous(breaks = breaks_extended(n=5), labels = scales::label_number_si(accuracy = 10))+
-  theme(legend.position = "none", 
+```{r, warning=F}
+nat_p_deaths <- nation_last30 %>% ggplot(aes(nation_last30,x=date, y=deaths))+
+  geom_line(size=1.1, color="#bf080e")+
+  labs(title = "Cumulative Deaths", x = "Date")+
+  jhu_caption+
+    theme(aspect.ratio = 6/14,
+          legend.position = "none", 
           panel.grid.major.y=element_line(color="dark grey", size=0.1),
+          panel.grid.major.x=element_line(color="dark grey", size=0.1),
           panel.grid.minor.y=element_line(color="dark grey", size=0.1),
-          axis.ticks=element_line(color="white"))
-nat_p5+geom_hline(yintercept=max(nation_last30$deaths), color="red")
+          axis.ticks=element_line(color="black")) +
+  scale_y_continuous(breaks = breaks_extended(n=7), 
+                     labels = scales::label_number_si(accuracy = 50),
+                     name = "Total",
+                     #sec.axis = dup_axis()
+                     sec.axis=sec_axis(trans=~./(nation_last30$population) * 100000, name = "Per Hundred Thousand People"))+
+  scale_x_date(date_breaks = "3 weeks", date_labels = "%b %d")+
+  geom_area(fill="red", alpha = 0.5)+
+  geom_hline(yintercept=max(nation_last30$deaths), color="red")+
+  geom_hline(yintercept=nation_last30$deaths[nrow(nation_last30)-14], color="green")+pq
+nat_p_deaths
 ```
 
-Deaths (Per 100,000 People)
-```{r}
-nat_p6 <- nation_last30 %>% bar_chart_ts(nation_last30$deaths_per_hundred_thousand, custom.fill = red.fill.5, lab.title = "Cumulative Deaths (Per 100,000 People)")+jhu_caption+theme(legend.position = "none", 
-          panel.grid.major.y=element_line(color="dark grey", size=0.1),
-          panel.grid.minor.y=element_line(color="dark grey", size=0.1),
-          axis.ticks=element_line(color="white"))
-nat_p6
-```
 Mortality Rate
 ```{r}
-mortality_rate <- (nation$deaths-lag(nation$deaths, 7)) / (lag(nation$cases, 7) - lag(nation$cases, 14))
+mortality_rate <- (nation$deaths-lag(nation$deaths, 7)) / (lag(nation$cases, 7) - lag(nation$cases, 14)) *100
 mortality_rate[259]
 ```
 
