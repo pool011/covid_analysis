@@ -204,7 +204,6 @@ states_uid <-seq(84000001, 84000056, by = 1)
 uid_states <- us_uid %>% 
   filter(UID %in% c(seq(84000001, 84000056, by = 1))) %>% 
   filter(UID != 84000011)
-uid_states
 nyc_uid <- uid$UID[uid$Combined_Key == "New York City, New York, US"]
 nyc_pop <- uid$Population[uid$Combined_Key == "New York City, New York, US"]
 ```
@@ -767,7 +766,7 @@ nat_p1 <- nation_last30 %>%
   #Third Wave Marker
   #geom_vline(xintercept=mdy("09-12-20"),color = "purple", size = 1.2)
 
-nat_p1
+
 ```
 
 Percent Change in Deaths (5 Day Moving Average)
@@ -783,7 +782,7 @@ nat_p4 <- nation_last30 %>% ggplot(aes(x=date,y=deaths_delta_ma)) +
     scale_fill_manual(values = c("red", "green"))+
     scale_color_manual(values = red.fill.5)+
     scale_x_date(date_breaks = "3 weeks", date_labels = "%b %d")+
-    scale_y_continuous(breaks = breaks_extended(n=6), labels = scales::label_number(accuracy = 1), name = "Daily Cases", sec.axis = sec_axis(trans=~./nation_last30$population * 1000000, name = "Per Million People"))+
+    scale_y_continuous(breaks = breaks_extended(n=6), labels = scales::label_number(accuracy = 1), name = "Daily Deaths", sec.axis = sec_axis(trans=~./nation_last30$population * 1000000, name = "Per Million People"))+
     labs(y = "", title = "Daily Deaths", x = "Date") +
     theme(aspect.ratio = 6/14,
           legend.position = "none", 
@@ -794,6 +793,7 @@ nat_p4 <- nation_last30 %>% ggplot(aes(x=date,y=deaths_delta_ma)) +
     pq + 
     #ylim(0,max(nation_last30$deaths_delta_ma))+
     annotate(geom = "text", x = xrange[2], y = yrange[2], label = paste("Note: 7 Day Moving Average", collapse = "\n"), hjust = 1, vjust = 1, size = 4)+jhu_caption
+nat_p1
 nat_p4
 
 ```
