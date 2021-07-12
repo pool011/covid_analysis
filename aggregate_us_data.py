@@ -6,7 +6,7 @@ import datetime
 
 
 class Composite_Table:
-    def __init__(self, last, first = "04-12-2020", read_path = "csse/csse_covid_19_data/csse_covid_19_daily_reports_us/"):
+    def __init__(self, last, first = "04-12-2020", read_path = "../COVID-19/csse_covid_19_data/csse_covid_19_daily_reports_us/"):
 
         self.fieldnames = ['Province_State', 'Country_Region', 'Date', 'UID', 'Last_Update', 'FIPS', 'ISO3', 'Long_',  'Lat', 'Confirmed', 'Deaths', 'Recovered', 'Active','Mortality_Rate', 'People_Tested', 'Testing_Rate', 'People_Hospitalized', 'Hospitalization_Rate', 'Incident_Rate', 'Case_Fatality_Ratio', 'Total_Test_Results']
         self.read_file_names = self.make_file_names(last, first)
