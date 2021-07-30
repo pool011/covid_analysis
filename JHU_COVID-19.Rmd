@@ -1,12 +1,12 @@
 ---
 title: "JHU COVID-19 Data by State and National"
 author: "Jonah Pool"
-date: "6/8/2020"
+date: "7/17/2021"
 output:
   word_document: default
   pdf_document: default
   html_document: default
-update: 6/8/2020
+update: 7/17/2021
 ---
 
 ```{r setup, include=FALSE}
@@ -195,6 +195,8 @@ csse_deaths_us_ts <- read_csv("../COVID-19/csse_covid_19_data/csse_covid_19_time
                               )
 uid <- read_csv("../COVID-19/csse_covid_19_data/UID_ISO_FIPS_LookUp_Table.csv", col_types = "iccddcccddci")
 daily_updates_ts <- read_csv("daily_updates_ts_us.csv", col_types="ccDdTdcdddddddddddddd")
+
+#vaccine_data <- read_csv("../COVID-19-CCI/data_tables/vaccine_data/us_data/time_series/")
 ```
 
 16, 316, 630, 580, 850
@@ -205,13 +207,13 @@ us_uid <- uid %>%
   filter(code3 %in% c(16, 316, 580, 850, 630, 840)) %>%
   select(UID, Admin2, Province_State, Combined_Key, Population) %>% 
   arrange(UID)
-us_uid
+# us_uid
 states <- c(us_uid$Province_State[1:4], us_uid$Province_State[6:57])
 states_uid <-seq(84000001, 84000056, by = 1)
 uid_states <- us_uid %>% 
   filter(UID %in% c(seq(84000001, 84000056, by = 1))) %>% 
   filter(UID != 84000011)
-uid_states
+# uid_states
 nyc_uid <- uid$UID[uid$Combined_Key == "New York City, New York, US"]
 nyc_pop <- uid$Population[uid$Combined_Key == "New York City, New York, US"]
 ```
@@ -277,7 +279,7 @@ states_sorted_in_millions <- csse_today_states_sorted %>% mutate_at(vars(matches
 N <- 20
 pop_breaks <- c(-Inf, 500000, seq(10^6,N*10^6, by = 2*10^6), Inf)
 pop_break_levels <- c("<500K", "500K", paste(seq(2,N-2,by=2), rep("M",times = round(((N/2)-1), 1), sep="")), paste(c(">", as.character(N), "M"),collapse=""))
-pop_break_levels
+head(pop_break_levels)
 
 csse_today_states_sorted %<>% mutate(Pop_fac = cut(csse_today_states_sorted$Population, breaks = pop_breaks, labels = pop_break_levels))
 csse_today_states_sorted %<>% filter(Testing_Rate < 75000)# %>% filter(Mortality_Rate < 6)
@@ -288,14 +290,14 @@ daily_updates_ts %<>% filter(Testing_Rate < 75000)
 mean_testing_rates <- csse_today_states_sorted %>% 
   group_by(vote) %>% 
   summarize(sum = sum(Population), avg = mean(Population), median = median(Population))
-mean_testing_rates
+head(mean_testing_rates)
 
 daily_updates_ts_sorted <- daily_updates_ts %>% mutate(vote = case_when(
   state %in% blue_states ~ "Dem",
   state %in% red_states ~ "Rep"
 )) %>% 
   mutate(vote = factor(vote)) %>% mutate(vote = fct_relevel(vote, c("Rep", "Dem")))
-daily_updates_ts_sorted
+head(daily_updates_ts_sorted)
 
 daily_updates_ts_sum <- daily_updates_ts_sorted %>%  
   group_by(state,vote) %>% 
@@ -318,7 +320,7 @@ cases_ts <- csse_confirmed_us_ts %>%
   pivot_longer(`1/22/20`:last_col(), names_to = "date", values_to = "cases") %>%
   #gather(`1/22/20`:last_col(), key = "date", value = "cases") %>% 
   ungroup()
-cases_ts  
+# cases_ts  
 cases_ts_states <- cases_ts %>%
   select(-Admin2) %>% 
   group_by(date, Province_State) %>%
@@ -479,11 +481,11 @@ Top 5 states by cases
 ```{r}
 top5cases_today <- cases_ts_states %>%
   filter(date == day) %>%
-  top_n(25, cases_delta)
+  top_n(5, cases_delta)
 
 top5cases_today_pht <- cases_ts_states %>% 
   filter(date == day) %>% 
-  top_n(25, cases_per_hundred_thousand)
+  top_n(5, cases_per_hundred_thousand)
 
 top5deaths_today<- deaths_ts_states %>%
   filter(date == day) %>% 
@@ -491,14 +493,14 @@ top5deaths_today<- deaths_ts_states %>%
 
 top5deaths_today_pht <- deaths_ts_states %>%
   filter(date == day) %>% 
-  top_n(10, deaths_per_hundred_thousand)
+  top_n(5, deaths_per_hundred_thousand)
 
 priority_states <- c("Maryland", "Texas", "Virginia", "California", "Georgia", "Florida")
 
 priority_cases_today <- cases_ts_states %>% 
   filter(date == day & (state %in% top5cases_today$state | state %in% priority_states)) %>% 
   mutate(state = fct_reorder(state, cases_delta))
-priority_cases_today
+# priority_cases_today
 
 priority_cases_today_pht <- cases_ts_states %>% 
   filter(date == day & (state %in% top5cases_today_pht$state | state %in% priority_states)) %>% 
@@ -511,7 +513,7 @@ priority_deaths_today <- deaths_ts_states %>%
 priority_deaths_today_pht <- deaths_ts_states %>% 
   filter(date == day & (state %in% top5deaths_today_pht$state | state %in% priority_states)) %>% 
   mutate(state = fct_reorder(state, deaths_per_hundred_thousand))
-priority_deaths_today_pht
+# priority_deaths_today_pht
 
 
 priority_ts <- combined_ts_states %>% 
@@ -590,7 +592,7 @@ p4
 top3_states <- deaths_ts_states %>% 
   filter(date == day) %>% 
   top_n(3, deaths)
-top3_states$state
+# top3_states$state
 top3_sum <- top3_states %>% 
   summarize(deaths = sum(deaths), state = "Top 3")
 rest <- deaths_ts_states %>% 
@@ -599,7 +601,7 @@ rest <- deaths_ts_states %>%
   summarize(deaths = sum(deaths), state = "Other")
 
 compare <- full_join(rest, top3_sum)
-compare
+# compare
 top3_sum$deaths/(rest$deaths + top3_sum$deaths)
 
 p7 <- ggplot(compare, aes(x=state, y=deaths, fill = c("blue", "orange")))+
@@ -622,12 +624,12 @@ blue_states_ts <- combined_ts_states %>%
 
 red_v_blue <- full_join(red_states_ts, blue_states_ts)
 red_v_blue %<>% mutate(vote = factor(vote)) %>% mutate(vote = fct_rev(vote))
-red_v_blue
+# red_v_blue
 
 red_v_blue_sum <- red_v_blue %>% 
   group_by(vote) %>% 
   summarise(average_death_rate = mean(deaths_per_hundred_thousand), average_case_rate=mean(cases_per_hundred_thousand), stdev=sd(cases_per_hundred_thousand))
-red_v_blue_sum
+# red_v_blue_sum
 
 ```
 ```{r}
@@ -833,7 +835,6 @@ mortality_rate <- (nation$deaths-lag(nation$deaths, 7)) / (lag(nation$cases, 7) 
 mortality_rate[259]
 ```
 
-Maps and Stuff
 ```{r}
 #usstatesmap <- sf::st_read("maps/tl_2019_us_state.shp")
 #st_drivers()
