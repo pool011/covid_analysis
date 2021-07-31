@@ -6,3 +6,5 @@
 *.nb.html
 *.png
 Untitled Folder/*
+.vs
+.vs/*
