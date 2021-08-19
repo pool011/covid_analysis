@@ -630,7 +630,6 @@ red_v_blue_sum <- red_v_blue %>%
   group_by(vote) %>% 
   summarise(average_death_rate = mean(deaths_per_hundred_thousand), average_case_rate=mean(cases_per_hundred_thousand), stdev=sd(cases_per_hundred_thousand))
 # red_v_blue_sum
-
 ```
 ```{r}
 p8 <- ggplot(red_v_blue, aes(x=deaths_per_hundred_thousand, fill = vote))+
