@@ -2,11 +2,13 @@ import csv
 import sys
 import argparse
 import datetime
+import curses
 
-
+# Create cursor
+scr = curses.initscr()
 
 class Composite_Table:
-    def __init__(self, last, first = "04-12-2020", read_path = "../COVID-19/csse_covid_19_data/csse_covid_19_daily_reports_us/"):
+    def __init__(self, last, first = "04-12-2020", read_path = "../COVID-19/csse_covid_19_data/csse_covid_19_daily_reports_us/", verb=False):
         self.fieldnames = ['Province_State', 'Country_Region', 'Date', 'UID', 'Last_Update', 'FIPS', 'ISO3', 'Long_',  'Lat', 'Confirmed', 'Deaths', 'Recovered', 'Active','Mortality_Rate', 'People_Tested', 'Testing_Rate', 'People_Hospitalized', 'Hospitalization_Rate', 'Incident_Rate', 'Case_Fatality_Ratio', 'Total_Test_Results', 'Cases_28_Days', 'Deaths_28_Days']
         self.read_file_names = self.make_file_names(last, first)
         self.data = {}
@@ -18,9 +20,11 @@ class Composite_Table:
 
             print("Adding to data...")
             self.data[table_data.date_str] = table_data
-        print("\nData:")
-        print(self.data, "\n")
-
+        if verb:
+            print("\nData:")
+            print(self.data, "\n")
+        else: 
+            print("Aggregated")
 
     def make_file_names(self, last, first):
         print("Generating file names...")
@@ -36,15 +40,20 @@ class Composite_Table:
             file_names.append(date.strftime("%m-%d-%Y.csv"))
         return file_names
 
-    def write_to_csv(self, write_file):
+    def write_to_csv(self, write_file, verb):
         with open(write_file, mode = 'w', newline = '') as outfile:
-            print(f"Generating headers for {write_file}...")
+            if verb: 
+                print(f"Generating headers for {write_file}...")
+
             writer = csv.DictWriter(outfile, fieldnames=self.fieldnames)
             writer.writeheader()
-            print(f"Writing contents to {write_file}...")
+            
+            if verb: 
+                print(f"Writing contents to {write_file}...")
             for date in self.data.keys():
                 writer.writerows(self.data[date].rows)
-        print(f"Data aggregated to {write_file}")
+        if verb:
+            print(f"Data aggregated to {write_file}")
 
 
 class Table:
