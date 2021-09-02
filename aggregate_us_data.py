@@ -2,10 +2,10 @@ import csv
 import sys
 import argparse
 import datetime
-import curses
+#import curses
 
 # Create cursor
-scr = curses.initscr()
+#scr = curses.initscr()
 
 class Composite_Table:
     def __init__(self, last, first = "04-12-2020", read_path = "../COVID-19/csse_covid_19_data/csse_covid_19_daily_reports_us/", verb=False):
@@ -16,9 +16,10 @@ class Composite_Table:
 
         for file_name in self.read_file_names:
             read_file_path = f"{read_path}{file_name}"
-            table_data = Table(read_file_path)
+            table_data = Table(read_file_path, verb=verb)
 
-            print("Adding to data...")
+            if verb:
+                print("Adding to data...")
             self.data[table_data.date_str] = table_data
         if verb:
             print("\nData:")
@@ -31,7 +32,7 @@ class Composite_Table:
         start = datetime.datetime.strptime(first, "%m-%d-%Y")
         #print(start)
         
-        end = datetime.datetime.strptime(last, "%m-%d-%Y") + datetime.timedelta(days=1)
+        end = datetime.datetime.strptime(last, '%m-%d-%Y') + datetime.timedelta(days=1)
 
         self.dates = [start + datetime.timedelta(days=x) for x in range(0, (end-start).days)]
 
@@ -57,7 +58,7 @@ class Composite_Table:
 
 
 class Table:
-    def __init__(self, read_file):
+    def __init__(self, read_file, verb):
 
         self.rows = []
 
@@ -66,9 +67,11 @@ class Table:
         self.date_str = self.date.strftime("%Y-%m-%d")
 
         with open(read_file, mode = 'r') as infile:
-            print(f"Generating reader for {read_file}...")
+            if verb:
+                print(f"Generating reader for {read_file}...")
             reader = csv.DictReader(infile)
-            print(f"Sorting file contents...")
+            if verb:
+                print(f"Sorting file contents...")
             for row in reader:
                 row['Date'] = self.date_str
                 if row['Country_Region'] == 'US':
@@ -88,19 +91,20 @@ def parse_args(arg_list):
     """
     parser = argparse.ArgumentParser(description = "Parses file path argument")
     parser.add_argument('last', type = str, help = 'most recent date available')
+    parser.add_argument('-v', '--verbose', action = 'store_true', help = 'Increase verbosity of output')
     args = parser.parse_args(arg_list)
     return args
 
 
-def main(last):
-    aggr_data_us = Composite_Table(last)
-    aggr_data_us.write_to_csv("daily_updates_ts_us.csv")
+def main(last, verb):
+    aggr_data_us = Composite_Table(last, verb=verb)
+    aggr_data_us.write_to_csv("daily_updates_ts_us.csv", verb)
 
 
 if __name__ == '__main__':
     args = parse_args(sys.argv[1:])
-    print(f"Total Arguments Passed: {len(sys.argv)}\nlast: {args.last}")
+    #print(f"Total Arguments Passed: {len(sys.argv)}\nlast: {args.last}")
     # if args.last == None:
     #     today = datetime.date.today()
     #     main(today)
-    main(args.last)
+    main(args.last, args.verbose)
