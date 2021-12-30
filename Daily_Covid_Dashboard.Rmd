@@ -1,0 +1,28 @@
+---
+title: "Daily Dashboard"
+output: html_document
+  latex_engine: elatex
+  
+---
+
+```{r setup}
+library(tidyverse)
+
+library(forecast)
+library(imputeTS)
+library(zoo)
+
+library(ggpubr)
+library(usmap)
+```
+
+
+```{r}
+cases <- read_csv('../COVID-19/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv')
+```
+
+```{r}
+
+```
+
+

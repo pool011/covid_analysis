@@ -23,11 +23,13 @@ library(lmerTest)
 library(sjPlot)
 library(webshot)
 library(scales)
-library(shiny)
+# library(shiny)
 library(maps)
 library(plotly)
 library(kableExtra)
 library(knitr)
+
+library(zoo)
 library(fpp2)
 
 library(sf)
@@ -35,6 +37,7 @@ library(tmap)
 library(cartography)
 library(treemap)
 
+library(usmap)
 library(ggspatial)
 library(rnaturalearth)
 library(rnaturalearthdata)
@@ -202,7 +205,6 @@ daily_updates_ts <- read_csv("daily_updates_ts_us.csv", col_types="ccDdTdcdddddd
 16, 316, 630, 580, 850
 Filter US ID Values
 ```{r}
-
 us_uid <- uid %>% 
   filter(code3 %in% c(16, 316, 580, 850, 630, 840)) %>%
   select(UID, Admin2, Province_State, Combined_Key, Population) %>% 
@@ -355,40 +357,6 @@ saveRDS(cases_ts_states, "cases_state.rds")
 
 #cases_ts_states
 ```
-Military Cases
-```{r eval=FALSE, include=FALSE}
-cases_ts_mil <- csse_confirmed_us_ts %>%
-  select(-Lat, -Long_, -FIPS) %>%
-  filter(Admin2 %in% branches)
-cases_ts_mil
-  group_by(UID) %>%
-  gather(`1/22/20`:`4/22/20`, key = "date", value = "cases") %>% 
-  ungroup()
-cases_ts_mil
-cases_ts_mil %<>%
-  group_by(Admin2, date) %>% 
-  summarize(cases = sum(cases)) %>%
-  inner_join(military_uid, key = "Province_State") %>% 
-  ungroup() %>% 
-  group_by(Admin2) %>%
-  mutate(date = mdy(date)) %>%
-  arrange(date) %>%
-  mutate(cases_per_hundred_thousand = round((cases / Population * 100000), 1), cases_delta = cases - lag(cases), cases_relative = cases_delta / lag(cases))
-cases_ts_mil
-cases_ts_mil %<>%
-  mutate(cases_delta = case_when(
-    is.na(cases_delta) ~ as.double(cases),
-    TRUE ~ as.double(cases) - as.double(lag(cases))
-  ), cases_delta_per_hundred_thousand = round((100000 * cases_delta / Population), 1), cases_delta_ma = movingAverage(cases_delta),
-  cases_relative = case_when(
-    is.na(cases_relative) ~ 0,
-    cases_relative == Inf ~ 1,
-    TRUE ~ cases_delta / lag(cases)), cases_perc = round(100*cases_relative, 3)) %>%
-  ungroup()
-saveRDS(cases_ts_mil, "cases_mil.rds")
-
-```
-
 
 Deaths Time Series
 ```{r}
@@ -431,37 +399,6 @@ deaths_ts_states %<>%
 #  filter(!(is.na(state)), state %in% uid_states$Province_State)
 saveRDS(deaths_ts_states, "deaths_state.rds")
 #deaths_ts_states
-```
-Military Deaths
-```{r eval=FALSE, include=FALSE}
-deaths_ts_mil <- csse_deaths_us_ts %>%
-  select(-Lat, -Long_, -FIPS) %>%
-  filter(Province_State == "US Military") %>%
-  filter(!(is.na(Admin2))) %>% 
-  group_by(UID) %>%
-  gather(`1/22/20`:`4/22/20`, key = "date", value = "deaths") %>% 
-  ungroup()
-deaths_ts_mil %<>%
-  group_by(Admin2, date) %>% 
-  summarize(deaths = sum(deaths)) %>%
-  inner_join(military_uid, key = "UID") %>%
-  ungroup() %>% 
-  group_by(Admin2) %>%
-  mutate(date = mdy(date)) %>%
-  arrange(date) %>%
-  mutate(deaths_per_hundred_thousand = round((100000 * deaths / Population), 2), deaths_delta = deaths - lag(deaths), deaths_relative = deaths_delta / lag(deaths))
-deaths_ts %<>%
-  mutate(deaths_delta = case_when(
-    is.na(deaths_delta) ~ as.double(deaths),
-    deaths_delta < 0 ~ (lead(deaths_delta) + lag(deaths_delta)) / 2,
-    TRUE ~ as.double(deaths) - as.double(lag(deaths))
-  ), deaths_delta_per_hundred_thousand = round((100000 * deaths_delta / Population), 2), deaths_delta_ma = movingAverage(deaths_delta),
-  deaths_relative = case_when(
-    is.na(deaths_relative) ~ 0,
-    deaths_relative == Inf ~ 1,
-    TRUE ~ deaths_delta / lag(deaths)), deaths_perc = round((100 * deaths_relative), 3), deaths_perc_ma = movingAverage(deaths_perc)) %>%
-  ungroup()
-saveRDS(deaths_ts_mil, "deaths_mil.rds")
 ```
 
 Combined Tables
@@ -733,13 +670,13 @@ Break Up Dates into Waves
 New Cases
 ```{r message=FALSE, warning=FALSE}
 xrange <-range(nation_last30$date)
-yrange <- range(nation_last30$cases_delta_ma)
+yrange <- range(nation_last30$cases_delta)
 
 nat_p1 <- nation_last30 %>% 
   ggplot() + 
-    geom_line(aes(x = date, y = cases_delta_ma), color = "blue", size = 1.2)+
-    geom_smooth(aes(x=date, y=cases_delta), size=1, method="loess", se=FALSE)+
-    geom_rect(nation_last30, x=nation_last30$date, y = nation_last30$cases_delta_ma, mapping = aes(xmin = lag(date), xmax = date, fill = cases_dir), ymin = 0, ymax = Inf, alpha = 0.3) + 
+    geom_line(aes(x = date, y = cases_delta), color = "blue", size = 1.2)+
+    geom_smooth(aes(x=date, y=cases_delta), size=1, method="loess", se=FALSE, color="red")+
+    geom_rect(nation_last30, x=nation_last30$date, y = nation_last30$cases_delta, mapping = aes(xmin = lag(date), xmax = date, fill = cases_dir), ymin = 0, ymax = Inf, alpha = 0.3) + 
     scale_color_manual(values = "blue")+
     scale_fill_manual(values = c("blue", "yellow"))+
     scale_y_continuous(breaks = breaks_extended(n=5), labels = scales::label_number_si(accuracy = 10))+
@@ -760,6 +697,21 @@ nat_p1 <- nation_last30 %>%
 
 nat_p1
 ```
+```{r}
+us_cases_nat <- msts(nation_last30$cases, start=c(2020, 76), seasonal.periods=c(7, 365.25))
+us_cases_nat
+model <- tbats(us_cases_nat)
+```
+
+```{r}
+autoplot(diff(us_cases_nat))
+```
+
+
+```{r}
+ggseasonplot(us_cases_nat, year.labels=T, year.labels.left=T, labelgap=.04) + ylab('Cases') + scale_y_continuous(labels=scales::comma) + theme(axis.text.x = element_text(angle=45))
+```
+
 
 Percent Change in Deaths (5 Day Moving Average)
 ```{r warning = FALSE}
@@ -792,7 +744,7 @@ nat_p2 <- nation_last30 %>% bar_chart_ts(nation_last30$cases, custom.fill = blue
           panel.grid.major.y=element_line(color="dark grey", size=0.1),
           panel.grid.minor.y=element_line(color="dark grey", size=0.1),
           axis.ticks=element_line(color="white")) +
-  scale_y_continuous(breaks = breaks_extended(n=5), labels = scales::label_number_si(accuracy = 1))+geom_smooth(aes(y=cases, x=date), method="lm", se=TRUE)
+  scale_y_continuous(breaks = breaks_extended(n=5), labels = scales::label_number_si(accuracy = 1))+geom_smooth(aes(y=cases, x=date), method="es", se=TRUE)
 nat_p2
 ```
 
@@ -835,6 +787,6 @@ mortality_rate[259]
 ```
 
 ```{r}
-#usstatesmap <- sf::st_read("maps/tl_2019_us_state.shp")
-#st_drivers()
+plot_usmap(region="counties")+
+  labs(title="Infection Rate Per Hundred Thousand")
 ```
