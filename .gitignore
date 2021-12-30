@@ -7,6 +7,5 @@
 *.png
 .vs
 .vs/*
-11_states_cases.png
-11_states_deaths.png
 *.csv
+*.Rproj
