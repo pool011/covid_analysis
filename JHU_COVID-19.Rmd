@@ -13,6 +13,7 @@ update: 7/17/2021
 library(tidyverse)
 library(magrittr)
 library(ggplot2)
+library(plotly)
 library(ggpubr)
 library(flextable)
 library(lubridate)
@@ -31,6 +32,7 @@ library(knitr)
 
 library(zoo)
 library(fpp2)
+library(forecast)
 
 library(sf)
 library(tmap)
@@ -43,195 +45,17 @@ library(rnaturalearth)
 library(rnaturalearthdata)
 ```
 
-Constants
-```{r}
-yd <- today()  - ddays(1)
-td <- today()
-
-td
-day <- yd
-MichiganRiots<- seq(ymd("2020-05-26"), ymd("2020-06-03"), by = 1)
-exclude = c("")
-# date for daily data release
-a <- as.character(ymd(day))
-b <- str_split(a, "-")
-b1 <- as.character(b[[1]][2])
-b2 <- as.character(b[[1]][3]) 
-b3 <- as.character(b[[1]][1])
-d_lookup_str <- str_c(b1, b2, b3, sep = "-")
-sinceMarch16 <- seq(date("2020-03-16"), day, by=1)
-#sinceMarch16
-last30 <- seq(td-30, td, by=1)
-last21 <- seq(td-21, td, by=1)
-last14 <- seq(td-14, td, by=1)
-last7 <- seq(td-7, td, by=1)
-
-red_states <- c("Alabama", "Alaska", "Arizona", "Arkansas", "Florida", "Georgia", "Idaho", "Indiana", "Iowa", "Maryland", "Massachusetts", "Mississippi", "Missouri", "Nebraska", "New Hampshire", "North Dakota", "Ohio", "Oklahoma", "South Carolina", "South Dakota", "Tennessee", "Texas", "Utah", "Vermont", "West Virginia", "Wyoming")
-
-blue_states <- c("California", "Colorado", "Connecticut", "Delaware", "Hawaii", "Illinois", "Kansas", "Kentucky", "Louisiana", "Maine", "Michigan", "Minnesota", "Montana", "Nevada", "New Jersey", "New Mexico", "New York", "North Carolina", "Oregon", "Pennsylvania", "Rhode Island", "Virginia", "Washington", "Wisconsin")
-
-
-bold.14.text <- element_text(face = "bold", size = 12)
-
-red.fill.5 <- c("#bf080e","#bf080e","#bf080e","#bf080e","#bf080e")
-blue.fill.5 <- c("#0016bd","#0016bd","#0016bd","#0016bd","#0016bd")
-
-red.fill.10 <- c("#bf080e","#bf080e","#bf080e","#bf080e","#bf080e","#bf080e","#bf080e","#bf080e","#bf080e","#bf080e", "#bf080e")
-blue.fill.10 <- c("#0016bd","#0016bd","#0016bd","#0016bd","#0016bd","#0016bd","#0016bd","#0016bd","#0016bd","#0016bd", "#0016bd")
-
-x.limit.march15 <- seq(ymd("2020-03-15"), day, by=1)
-
-#annotation.moving.average <- annotate(geom = "text", x = xrange[1], y = yrange[2], label = paste(strwrap("Note: 5 Day Moving Average", 40), collapse = "\n"), hjust = 0, vjust = 1, size = 4)
-
-pq <- theme(text = bold.14.text) +
-  #theme(axis.ticks = element_blank()) +
-  theme(panel.border = element_rect(colour = "black", fill=NA, size=2),
-        panel.background=element_rect(colour = NA, fill = "white"))
-jhu_caption <- labs(caption="Data Source: Johns Hopkins University CSSE")
-```
-
-Functions
-```{r}
-movingAverage <- function(x, n=14, centered=TRUE) {
-    
-    if (centered) {
-        before <- floor  ((n-1)/2)
-        after  <- ceiling((n-1)/2)
-    } else {
-        before <- n-1
-        after  <- 0
-    }
-
-    # Track the sum and count of number of non-NA items
-    s     <- rep(0, length(x))
-    count <- rep(0, length(x))
-    
-    # Add the centered data 
-    new <- x
-    # Add to count list wherever there isn't a 
-    count <- count + !is.na(new)
-    # Now replace NA_s with 0_s and add to total
-    new[is.na(new)] <- 0
-    s <- s + new
-    
-    # Add the data from before
-    i <- 1
-    while (i <= before) {
-        # This is the vector with offset values to add
-        new   <- c(rep(NA, i), x[1:(length(x)-i)])
-
-        count <- count + !is.na(new)
-        new[is.na(new)] <- 0
-        s <- s + new
-        
-        i <- i+1
-    }
-
-    # Add the data from after
-    i <- 1
-    while (i <= after) {
-        # This is the vector with offset values to add
-        new   <- c(x[(i+1):length(x)], rep(NA, i))
-       
-        count <- count + !is.na(new)
-        new[is.na(new)] <- 0
-        s <- s + new
-        
-        i <- i+1
-    }
-    
-    # return sum divided by count
-    s/count
-}
-
-bar_chart_ts <- function(df, y, custom.fill = blue.fill.10, lab.title, y.lim = max(y)) {
-  plot <- ggplot(df, aes(x = date, y = y, fill = "")) + 
-    geom_col() +
-    scale_fill_manual(values = custom.fill) +
-    labs(y = "", title = lab.title, x = "Date") +
-    theme(legend.position = "none") +
-    ylim(0,y.lim) +
-    pq
-  plot
-}
-
-line_chart_ts <- function(df, y, custom.fill = blue.fill.10, lab.title, y.lim = max(y)) {
-  plot <- ggplot(df, aes(x = date, y = y, color = "", fill = "")) + 
-    geom_line(size = 1.2) +
-    scale_fill_manual(values = custom.fill) +
-    scale_color_manual(values = custom.fill)+
-    labs(y = "", title = lab.title, x = "Date") +
-    theme(legend.position = "none") +
-    ylim(0,y.lim) +
-    pq
-  plot
-}
-
-line_chart_ma_ts <- function(df, y, custom.fill = blue.fill.10, lab.title, y.lim = max(y)) {
-  plot <- ggplot(df, aes(x = date, y = y, color = "", fill = "")) + 
-    geom_smooth(size = 1.2) +
-    scale_fill_manual(values = custom.fill) +
-    scale_color_manual(values = custom.fill)+
-    labs(y = "", title = lab.title, x = "Date") +
-    theme(legend.position = "none") +
-    ylim(0,y.lim) +
-    pq
-  plot
-}
-
-```
-
-Load Johns Hopkins Univ. CSSE Data
-```{r}
-ts_date_count <- today() - ymd(20200122)
-
-daily_fname <- str_c("../COVID-19/csse_covid_19_data/csse_covid_19_daily_reports_us/", d_lookup_str, ".csv")
-csse_today <- read_csv(daily_fname, col_types = "ccTddddddddddddcdd")
-csse_confirmed_us_ts <- read_csv("../COVID-19/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv",
-                                 col_types=str_c('cccddcccddc', 
-                                 str_c(rep("i", times=ts_date_count), collapse=""))
-                                 )
-
-csse_deaths_us_ts <- read_csv("../COVID-19/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_US.csv", 
-                              col_types=str_c('cccddcccddc', 
-                              str_c(rep("i", times=ts_date_count+1), collapse=""))
-                              )
-uid <- read_csv("../COVID-19/csse_covid_19_data/UID_ISO_FIPS_LookUp_Table.csv", col_types = "iccddcccddci")
-daily_updates_ts <- read_csv("daily_updates_ts_us.csv", col_types="ccDdTdcdddddddddddddd")
-
-#vaccine_data <- read_csv("../COVID-19-CCI/data_tables/vaccine_data/us_data/time_series/")
-```
-
-16, 316, 630, 580, 850
-Filter US ID Values
-```{r}
-us_uid <- uid %>% 
-  filter(code3 %in% c(16, 316, 580, 850, 630, 840)) %>%
-  select(UID, Admin2, Province_State, Combined_Key, Population) %>% 
-  arrange(UID)
-# us_uid
-states <- c(us_uid$Province_State[1:4], us_uid$Province_State[6:57])
-states_uid <-seq(84000001, 84000056, by = 1)
-uid_states <- us_uid %>% 
-  filter(UID %in% c(seq(84000001, 84000056, by = 1))) %>% 
-  filter(UID != 84000011)
-# uid_states
-nyc_uid <- uid$UID[uid$Combined_Key == "New York City, New York, US"]
-nyc_pop <- uid$Population[uid$Combined_Key == "New York City, New York, US"]
-```
-
 By State Snapshot Today
-```{r}
-
+```{r eval=F}
 csse_today_states <- csse_today %>% 
-  select(-Lat, -Long_, -FIPS, -Last_Update) %>%
   inner_join(uid_states, key = "UID") %>% 
   filter(Province_State %in% us_uid$Province_State & !(is.na(Province_State)), !(Province_State %in% c("Diamond Princess", "Recovered", "Grand Princess"))) %>%
   rename(state = Province_State) %>% 
   rename(confirmed = Confirmed, deaths = Deaths, recovered = Recovered, active = Active, tested = Total_Test_Results, hospitalized = People_Hospitalized) %>% 
   arrange(desc(Testing_Rate))
+
+
 daily_updates_ts %<>% 
-  select(-Lat, -Long_, -FIPS, -Last_Update) %>%
   inner_join(uid_states, key = "UID") %>% 
   #filter(Province_State %in% us_uid$Province_State & !(is.na(Province_State)), !(Province_State %in% c("Diamond Princess", "Recovered", "Grand Princess"))) %>%
   rename(state = Province_State) %>% 
@@ -243,32 +67,21 @@ daily_updates_ts %<>%
 
 
 Testing and Incident Rate
-```{r}
+```{r eval=F}
 csse_today_states %<>% 
   mutate(c_d_rat = deaths / confirmed) %>% 
   filter(!(is.na(c_d_rat))) %>% 
   filter(c_d_rat != Inf)
-
-# shift data to days since 50th case and 10th recorded death
-
-#tvi_plot <- daily_updates_ts %>% 
-#  ggplot(aes(x = Testing_Rate, y = Hospitalization_Rate)) + 
-#  geom_point(aes(group = state))+
-#  geom_smooth(aes(group = state), method = 'lm')+
-#  labs(y = "Hosp", title = strwrap("Effect of Testing Rate on Incident Rate of COVID-19"), subtitle = #"Within the USA and its territories", x = "Tested Individuals per 100,000 People", caption="Data Source: #Johns Hopkins University CSSE 2020-04-29.\n Each point represents one state/territory.") +
-#  theme(legend.position = "right") +
-#  scale_y_continuous()+
-#  pq
-#ggsave("testing-data-plot.png", plot=tvi_plot)
 ```
 
-```{r}
+```{r eval=F}
 #"1M", "2M", "3M", "4M", "5M", "6M", "7M", "8M", "9M", "10M", "11M", "12M"
 md_testing_rate <- csse_today_states$Testing_Rate[csse_today_states$state == "Maryland"]
 md_testing_rate
 mean_testing_rate <- mean(csse_today_states$Testing_Rate)
 mean_testing_rate
-
+```
+```{r eval=F}
 csse_today_states_sorted <- csse_today_states %>% mutate(vote = case_when(
   state %in% blue_states ~ "Dem",
   state %in% red_states ~ "Rep"
@@ -304,18 +117,14 @@ head(daily_updates_ts_sorted)
 daily_updates_ts_sum <- daily_updates_ts_sorted %>%  
   group_by(state,vote) %>% 
   summarise(mean_testing_rate = mean(Testing_Rate), med_testing_rate = median(Testing_Rate))
-#model.2 <- lm(confirmed ~ c_d_rat, data = csse_today_states_sorted)
-#summary(model.2)
 ```
 
 
 Cases Time Series
 ```{r}
-
-#matches("`(1?[0-9]{1})/([0-2]?[0-9]{1}/20)`")
 cases_ts <- csse_confirmed_us_ts %>%
-  select(-Lat, -Long_, -FIPS) %>%
-  filter(Province_State %in% us_uid$Province_State) %>% 
+  # select(-Lat, -Long_, -FIPS) %>%
+  filter(Province_State %in% us_uid$Province_State) %>%
   filter(!(is.na(Admin2))) %>% 
   filter(!(Province_State %in% c("Diamond Princess", "Recovered", "Grand Princess"))) %>%
   group_by(UID) %>%
@@ -354,8 +163,6 @@ cases_ts_states %<>%
   mutate(vote = factor(vote)) %>% 
   mutate(vote = fct_relevel(vote, c("Rep", "Dem")))
 saveRDS(cases_ts_states, "cases_state.rds")
-
-#cases_ts_states
 ```
 
 Deaths Time Series
@@ -656,15 +463,18 @@ nation %<>%
 nation[is.na(nation)] <- as.double(0)
 nation[nation == Inf]<- as.double(100)
 nation %<>%
-  mutate(cases_dir = factor(nation$cases_dir, labels = c("red", "green")))
+  mutate(cases_dir = factor(nation$cases_dir, labels = c("Up", "Down")))
 nation_last30 <- nation %>% 
   filter(date %in% sinceMarch16)
-nation_today <- tail(nation_last30, 1) %>% select(-cases_it,-deaths_it,lag_cases,-relative,-cases_delta_ma,-cases_dir,-cases_perc_ma,-lag_deaths,-deaths_delta_ma,-deaths_dir,-deaths_perc_ma)
+nation_today <- tail(nation_last30, 1) %>% select(-cases_it,-deaths_it,lag_cases,-relative,-cases_delta_ma,-cases_dir,-cases_perc_ma,-lag_deaths,-deaths_delta_ma,-deaths_dir,deaths_perc_ma)
 nation_today
 ```
 Break Up Dates into Waves
 ```{r}
-#nation_last30 %>%
+us_cases_daily <- ts(diff(nation_last30$cases), end=c(2022, 7), frequency=365.25)
+autoplot(us_cases_daily, series="Daily Cases")+
+  autolayer(fitted(es(us_cases_daily)), series="Smoothed", size=1)+
+  scale_y_continuous(labels=scales::label_comma())
 ```
 
 New Cases
@@ -681,7 +491,7 @@ nat_p1 <- nation_last30 %>%
     scale_fill_manual(values = c("blue", "yellow"))+
     scale_y_continuous(breaks = breaks_extended(n=5), labels = scales::label_number_si(accuracy = 10))+
     labs(y = "", title = "Daily New Cases", x = "Days") +
-    theme(legend.position = "none", 
+    theme(legend.position = "right", 
           panel.grid.major.y=element_line(color="dark grey", size=0.1),
           panel.grid.minor.y=element_line(color="dark grey", size=0.1),
           axis.ticks=element_line(color="white")) +
@@ -698,13 +508,42 @@ nat_p1 <- nation_last30 %>%
 nat_p1
 ```
 ```{r}
-us_cases_nat <- msts(nation_last30$cases, start=c(2020, 76), seasonal.periods=c(7, 365.25))
-us_cases_nat
-model <- tbats(us_cases_nat)
+us_cases_weekly <- nation_last30 %>% 
+  mutate(week = week(date), year=year(date)) %>% 
+  arrange(date) %>% 
+  group_by(year, week) %>% 
+  summarize(avg_cases = mean(diff(cases))) %>% 
+  ungroup() %>% 
+  arrange(year, week) %>% 
+  filter(!is.na(avg_cases))
+
+
+us_cases_nat <- ts(us_cases_weekly$avg_cases, start=c(2020, 11), frequency = 52)
+
+us_cases_chopped <- window(us_cases_nat, c(2021,51), c(2022,2))
+us_cases_chopped
+# model <- tbats(us_cases_nat)
 ```
 
 ```{r}
-autoplot(diff(us_cases_nat))
+us_cases_mod <- tslm(us_cases_chopped ~ trend+season, biasadj = T)
+us_cases_spf <- splinef(us_cases_chopped, method="mle", h=5)
+us_cases_rwf <- rwf(us_cases_chopped, lambda=0, drift=T)
+checkresiduals(resid(us_cases_mod))
+# autoplot(us_cases_chopped)+autolayer(fitted(us_cases_spf))
+# autoplot(diff(us_cases_nat))
+autoplot(us_cases_chopped)+
+  autolayer(forecast(us_cases_rwf, h=5), series="Moderate", size=1)+
+  autolayer(forecast::forecast(us_cases_mod, h=5), size=1, series="Optimistic")+
+  autolayer(us_cases_spf, series="Fuck", size=1)
+```
+
+```{r}
+autoplot(us_cases_chopped)+scale_y_continuous(labels=scales::label_comma())+autolayer(window(us_cases_daily, c(2021, 360)))
+```
+
+```{r}
+scale_y_continuous(labels=scales::label_comma())
 ```
 
 
@@ -714,13 +553,13 @@ ggseasonplot(us_cases_nat, year.labels=T, year.labels.left=T, labelgap=.04) + yl
 
 
 Percent Change in Deaths (5 Day Moving Average)
-```{r warning = FALSE}
+```{r warning=FALSE}
 xrange <-range(nation_last30$date)
 yrange <- range(nation_last30$deaths_delta_ma)
 
 nat_p4 <- nation_last30 %>% ggplot() + 
     geom_rect(nation_last30, x=nation_last30$date, y = nation_last30$deaths_delta_ma, mapping = aes(xmin = lag(date), xmax = date, fill = deaths_dir), ymin = 0, ymax = Inf, alpha = 0.3) + 
-    geom_line(aes(x = date, y = deaths_delta_ma, color = ""), size = 1.2) +
+    geom_line(aes(x = date, y = deaths_delta_ma), size = 1.2, color="red") +
     scale_fill_manual(values = c("red", "green"))+
     scale_color_manual(values = red.fill.5)+
     scale_y_continuous(breaks = breaks_extended(n=5), labels = scales::label_number(accuracy = 1))+
@@ -732,20 +571,22 @@ nat_p4 <- nation_last30 %>% ggplot() +
     pq + 
     #ylim(0,max(nation_last30$deaths_delta_ma))+
     annotate(geom = "text", x = xrange[2], y = yrange[2], label = paste("Note: 7 Day Moving Average", collapse = "\n"), hjust = 1, vjust = 0, size = 4)+jhu_caption
-nat_p4
+ggplotly(nat_p4)
 
 ```
 
 Total Cases (in millions)
 ```{r}
+xmax <- max(nation_last30)
+
 nat_p2 <- nation_last30 %>% bar_chart_ts(nation_last30$cases, custom.fill = blue.fill.5, lab.title = "Total Cases")+
   jhu_caption+geom_hline(yintercept=max(nation_last30$cases), color="red")+
   theme(legend.position = "none", 
           panel.grid.major.y=element_line(color="dark grey", size=0.1),
           panel.grid.minor.y=element_line(color="dark grey", size=0.1),
           axis.ticks=element_line(color="white")) +
-  scale_y_continuous(breaks = breaks_extended(n=5), labels = scales::label_number_si(accuracy = 1))+geom_smooth(aes(y=cases, x=date), method="es", se=TRUE)
-nat_p2
+  scale_y_continuous(breaks = breaks_extended(n=5), labels = scales::label_number_si(accuracy = 1))#+geom_smooth(aes(y=cases, x=date), method="es", se=TRUE)
+ggplotly(nat_p2)
 ```
 
 Total Cases (Per 100,000  People)
@@ -759,7 +600,7 @@ nat_p3 <- nation_last30 %>% bar_chart_ts(nation_last30$cases_per_hundred_thousan
           panel.grid.minor.y=element_line(color="dark grey", size=0.1),
           axis.ticks=element_line(color="white"))
     # + geom_smooth(method = "lm", se = FALSE)+jhu_caption
-nat_p3
+ggplotly(nat_p3)
 ```
 
 Deaths Total
@@ -769,7 +610,7 @@ nat_p5 <- nation_last30 %>% bar_chart_ts(nation_last30$deaths, custom.fill = red
           panel.grid.major.y=element_line(color="dark grey", size=0.1),
           panel.grid.minor.y=element_line(color="dark grey", size=0.1),
           axis.ticks=element_line(color="white"))
-nat_p5+geom_hline(yintercept=max(nation_last30$deaths), color="red")
+ggplotly(nat_p5+geom_hline(yintercept=max(nation_last30$deaths), color="red"))
 ```
 
 Deaths (Per 100,000 People)
@@ -778,7 +619,7 @@ nat_p6 <- nation_last30 %>% bar_chart_ts(nation_last30$deaths_per_hundred_thousa
           panel.grid.major.y=element_line(color="dark grey", size=0.1),
           panel.grid.minor.y=element_line(color="dark grey", size=0.1),
           axis.ticks=element_line(color="white"))
-nat_p6
+ggplotly(nat_p6)
 ```
 Mortality Rate
 ```{r}
@@ -787,6 +628,8 @@ mortality_rate[259]
 ```
 
 ```{r}
-plot_usmap(region="counties")+
-  labs(title="Infection Rate Per Hundred Thousand")
+umap <- plot_usmap(region="states", data=filter(cases_ts_states, date==yd), values="cases_delta_per_hundred_thousand", include=.south_region)+
+  labs(title="Infection Rate Per Hundred Thousand")+
+  scale_fill_gradient(low="light yellow", high="dark red")
+ggplotly(umap)
 ```

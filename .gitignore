@@ -9,3 +9,4 @@
 .vs/*
 *.csv
 *.Rproj
+*.RData*

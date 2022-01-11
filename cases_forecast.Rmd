@@ -1,0 +1,63 @@
+---
+title: "Cases Forecast"
+output: html_document
+  latex_engine: elatex
+  
+---
+
+```{r setup}
+library(tidyverse)
+library(magrittr)
+
+library(forecast)
+library(imputeTS)
+library(zoo)
+library(lubridate)
+
+library(RSocrata)
+
+library(ggpubr)
+library(ggfortify)
+library(usmap)
+
+library(GGally)
+```
+
+
+```{r}
+cases <- read_csv('../COVID-19/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv')
+```
+
+```{r}
+vax_case_url <- "https://data.cdc.gov/resource/ynw2-4viq.csv"
+
+if (!(exists("vax_case_df"))) {
+  vax_case_df <- read.socrata(vax_case_url)
+  print("vax_case_df downloaded successfully.")
+} else {
+  print("vax_case_df already exists!")
+}
+
+head(vax_case_df)
+
+```
+```{r}
+vax_case_df_c <- vax_case_df %>% filter(jurisdiction == "United States", age_group == "All Ages") %>% select(covid_19_deaths, total_deaths, pneumonia_deaths, influenza_deaths, pneumonia_or_influenza, pneumonia_influenza_or_covid)
+
+covid_deaths_ts <- ts(data=vax_case_df_c, frequency=52, start=c(2020, 1))
+autoplot(covid_deaths_ts)+scale_y_continuous(trans=scales::modulus_trans(0.3))
+```
+
+```{r eval=F}
+covid_deaths_ts %>% as.data.frame() %>% ggpairs()
+```
+
+
+```{r}
+fit.ex <- tslm(total_deaths ~ covid_19_deaths, data=covid_deaths_ts)
+summary(fit.ex)
+weeks_2_prior <- week(today())-3
+
+cov_d_ts <- window(covid_deaths_ts, start=2020, end=2021 + weeks_2_prior / 52)
+autoplot(cov_d_ts)+autolayer(fitted(fit.ex), PI=F)
+```
